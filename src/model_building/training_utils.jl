@@ -38,9 +38,6 @@ end
 
 function get_parameters_axes(params_dict)
     
-    # Get params axes
-    theta_components = tuple(Symbol.(params_dict["priors"].keys)...)
-
     vector_init = []
     for pp in params_dict["priors"].keys
 

@@ -1,30 +1,12 @@
 # Simulations linear model
 using MirrorVI
+using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors
 
 using CSV
 using DataFrames
-
-using Optimisers
-using Distributions
-using DistributionsAD
-using LogExpFunctions
 using StatsPlots
 
-abs_project_path = normpath(joinpath(@__FILE__, "..", "..", ".."))
-
-include(joinpath(abs_project_path, "src", "model_building", "my_optimisers.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "utils.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "training_utils.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "plot_utils.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "bijectors_extension.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "variational_distributions.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "distributions_logpdf.jl"))
-include(joinpath(abs_project_path, "src", "utils", "mixed_models_data_generation.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
+abs_project_path = normpath(joinpath(@__FILE__, "..", "..", "results"))
 
 
 
@@ -47,7 +29,7 @@ simulations_metrics = Dict()
 # label_files = "algo_HS_linear_n$(n_individuals)_p$(p)_active$(p1)_r$(Int(corr_factor*100))"
 label_files = "algo_product_linear_n$(n_individuals)_p$(p)_active$(p1)_r$(Int(corr_factor*100))"
 
-params_dict = OrderedDict()
+params_dict = MirrorVI.OrderedDict()
 
 # beta 0
 update_parameters_dict(
@@ -97,10 +79,7 @@ update_parameters_dict(
     params_dict;
     name="sigma_y",
     dim_theta=(1, ),
-    logpdf_prior=x::Real -> Distributions.logpdf(
-        truncated(Normal(0f0, 0.5f0), 0f0, Inf32),
-        x
-    ),
+    logpdf_prior=x::Real -> DistributionsLogPdf.log_half_normal(x, 1.),
     dim_z=2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_normal(z; bij=LogExpFunctions.log1pexp),
     init_z=vcat(1., 0.5)
@@ -118,26 +97,19 @@ for simu = 1:n_simulations
         p=p, p1=p1, p0=p0, corr_factor=corr_factor,
         random_seed=random_seed + simu
     )
-    
-    function model(theta::AbstractArray; X::AbstractArray, prior_position=prior_position)
-        beta_reg = theta[prior_position[:beta]] .* theta[prior_position[:sigma_beta]]
-        mu = X * beta_reg .+ theta[prior_position[:beta0]]
-        return (mu, ones(eltype(mu), size(mu)) .* theta[prior_position[:sigma_y]])
-    end
-    
+        
     # Training
     z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
-    optimiser = MyOptimisers.DecayedADAGrad()
-    # optimiser = Optimisers.RMSProp(0.01)
+    optimiser = MirrorVI.MyOptimisers.DecayedADAGrad()
     
-    res = hybrid_training_loop(
+    res = MirrorVI.hybrid_training_loop(
         z=z,
         y=data_dict["y"],
         X=data_dict["X"],
         params_dict=params_dict,
-        model=model,
+        model=Predictors.linear_model,
         log_likelihood=DistributionsLogPdf.log_normal,
-        log_prior=x::AbstractArray -> compute_logpdf_prior(x; params_dict=params_dict),
+        log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
         n_iter=num_iter,
         optimiser=optimiser,
         save_all=false,
@@ -312,31 +284,24 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 # --------------------------------------------------------------------
 # Single Run of Bayesian Model
 
-data_dict = generate_linear_model_data(
+data_dict = MirrorVI.generate_linear_model_data(
     n_individuals=n_individuals,
     p=p, p1=p1, p0=p0, corr_factor=corr_factor,
     random_seed=random_seed
 )
 
-function model(theta::AbstractArray; X::AbstractArray, prior_position=prior_position)
-    beta_reg = theta[prior_position[:beta]] .* theta[prior_position[:sigma_beta]]
-    mu = X * beta_reg .+ theta[prior_position[:beta0]]
-    return (mu, ones(eltype(mu), size(mu)) .* theta[prior_position[:sigma_y]])
-end
-
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
-optimiser = MyOptimisers.DecayedADAGrad()
-# optimiser = Optimisers.RMSProp(0.01)
+optimiser = MirrorVI.MyOptimisers.DecayedADAGrad()
 
-res = hybrid_training_loop(
+res = MirrorVI.hybrid_training_loop(
     z=z,
     y=data_dict["y"],
     X=data_dict["X"],
     params_dict=params_dict,
-    model=model,
+    model=Predictors.linear_model,
     log_likelihood=DistributionsLogPdf.log_normal,
-    log_prior=x::AbstractArray -> compute_logpdf_prior(x; params_dict=params_dict),
+    log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
     n_iter=num_iter,
     optimiser=optimiser,
     save_all=false,

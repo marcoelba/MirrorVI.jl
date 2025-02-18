@@ -95,25 +95,3 @@ function update_parameters_dict(
     
     return params_dict
 end
-
-
-function get_parameters_axes(params_dict)
-    
-        vector_init = []
-        # theta = []
-        for pp in params_dict["priors"].keys
-
-            if prod(params_dict["priors"][pp]["dim_theta"]) > 1
-                param_init = ones(params_dict["priors"][pp]["dim_theta"])
-            else
-                param_init = ones(params_dict["priors"][pp]["dim_theta"])[1]
-            end
-            push!(vector_init, Symbol(pp) => param_init)
-            # push!(theta, param_init...)
-        end
-
-        proto_array = ComponentArray(; vector_init...)
-        theta_axes = getaxes(proto_array)
-
-        return theta_axes
-end

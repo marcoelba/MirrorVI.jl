@@ -29,21 +29,6 @@ function linear_predictor(
 end
 
 
-function linear_random_intercept_model(
-    theta::AbstractArray;
-    X::AbstractArray,
-    prior_position::NamedTuple
-    )
-    n = size(X, 1)
-    n_time_points = length(theta[prior_position[:beta_time]])
-
-    mu = [theta[prior_position[:beta0_fixed]] .+ theta[prior_position[:beta0_random]] .+ X * theta[prior_position[:beta_fixed]] .+ theta[prior_position[:beta_time]][tt] for tt = 1:n_time_points]
-    sigma = [Float32.(ones(n)) .* theta[prior_position[:sigma_y]] for tt = 1:n_time_points]
-
-    return (hcat(mu...), hcat(sigma...))
-end
-
-
 function random_intercept_model(
     theta::ComponentArray,
     rep_index::Int64;

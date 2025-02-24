@@ -66,7 +66,7 @@ end
 function optimal_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_target::Real=0.1)
 
     p = length(beta_true)
-    mirror_coefficients = rand.(ms_dist_vec, mc_samples)
+    mirror_coefficients = reduce(hcat, rand.(ms_dist_vec, mc_samples))'
     opt_t = get_t(mirror_coefficients; fdr_target=fdr_target)
 
     inclusion_matrix = mirror_coefficients .> opt_t
@@ -147,7 +147,7 @@ end
 
 function posterior_ms_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_target::Real=0.1)
 
-    mirror_coefficients = rand.(ms_dist_vec, mc_samples)
+    mirror_coefficients = reduce(hcat, rand.(ms_dist_vec, mc_samples))'
     opt_t = get_t(mirror_coefficients; fdr_target=fdr_target)
     inclusion_matrix = mirror_coefficients .> opt_t
     inclusion_probs = mean(inclusion_matrix, dims=2)[:, 1]

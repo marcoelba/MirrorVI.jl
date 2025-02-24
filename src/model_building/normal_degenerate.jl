@@ -19,7 +19,7 @@ function (d::ConstantDistribution)(x::Real)
 end
 
 #### Statistics
-Distributions.entropy(d::ConstantDistribution) = 0.
+Distributions.entropy(d::ConstantDistribution) = 0.0
 
 #### Sampling
 Base.rand(rng::Random.AbstractRNG, d::ConstantDistribution{T}) where {T} = d.m
@@ -36,12 +36,12 @@ struct MultivariateConstantDistribution{T<:AbstractArray} <: ContinuousUnivariat
     end
 end
 
-function (d::MultivariateConstantDistribution)(x::MultivariateConstantDistribution)
+function (d::MultivariateConstantDistribution)(x::AbstractVector)
     return d.m
 end
 
 #### Statistics
-Distributions.entropy(d::MultivariateConstantDistribution) = 0.
+Distributions.entropy(d::MultivariateConstantDistribution) = 0.0
 
 #### Sampling
 Base.rand(rng::Random.AbstractRNG, d::MultivariateConstantDistribution{T}) where {T} = d.m

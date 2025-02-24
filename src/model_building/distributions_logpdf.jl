@@ -95,30 +95,4 @@ function log_bernoulli(x::Real, prob::Real)
 end
 
 
-"""
-Log-pdf of a mixture of Normal distributions.
-    x::Float32
-    w::AbstractArray{<:Float32}
-    mu::AbstractArray{<:Float32}
-    sd::AbstractArray{<:Float32}
-"""
-function log_normal_mixture(
-    x::Float32,
-    w::AbstractArray{<:Float32}=Float32.(ones(1, 2)*0.5),
-    m::AbstractArray{<:Float32}=Float32.(zeros(1, 2)),
-    s::AbstractArray{<:Float32}=Float32.(ones(1, 2));
-    weights::AbstractArray{<:Float32}=w,
-    mu::AbstractArray{Float32}=m,
-    sigma::AbstractArray{Float32}=s
-    )
-
-    xstd = -0.5f0 .* ((x .- mu) ./ sigma).^2f0
-    wstd = weights ./ (sqrt(2f0 .* Float32(pi)) .* sigma)
-    offset = maximum(xstd .* wstd, dims=2)
-    xe = exp.(xstd .- offset)
-    s = sum(xe .* wstd, dims=2)
-    log.(s) .+ offset
-end
-
-
 end

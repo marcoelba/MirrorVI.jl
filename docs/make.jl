@@ -2,10 +2,11 @@ using Documenter
 using MirrorVI
 
 makedocs(
-    sitename = "MirrorVI",
-    format = Documenter.HTML(),
-    modules = [MirrorVI],
-    checkdocs = :exports
+    sitename = "MirrorVI.jl Documentation",
+    pages = ["Index" => "index.md"],
+    format = Documenter.HTML(prettyurls = false),
+    modules = [MirrorVI]
+    # checkdocs = :exports
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.

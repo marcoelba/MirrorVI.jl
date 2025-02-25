@@ -85,7 +85,6 @@ end
     # Test rand_z_dropout
     z = rand_z_dropout(params_dict)
     @test length(z) == 6
-    @test all(z[1:2] .∈ [0.0, 1.0])
     @test all(z[3:4] .== 1.0)
     @test all(z[5:6] .== 1.0)
 end

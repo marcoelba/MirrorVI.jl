@@ -1,6 +1,8 @@
 using Test
-using Bijectors
 using LogExpFunctions
+
+using MirrorVI: Bijectors
+
 
 # Test Bijectors.jacobian for log1pexp with AbstractArray
 @testset "Bijectors.jacobian for log1pexp with AbstractArray" begin

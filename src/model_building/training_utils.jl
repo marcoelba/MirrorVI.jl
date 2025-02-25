@@ -192,7 +192,7 @@ This function computes the ELBO by:
 - `ranges_z::AbstractArray`: Specifies how `z` is divided among the parameters of the variational distribution.
 - `vi_family_array::AbstractArray`: An array of functions defining the variational family for each parameter.
 - `random_weights::AbstractArray`: Boolean array of the same dimension as theta, stating whether each parameter is random or not.
-- `model`: A function representing the model, which takes parameters and input data `X` and returns predictions.
+- `model`: A function representing the model, which takes parameters and input data `X` (keyword argument) and returns atuple with the predictions.
 - `theta_axes::ComponentArrays.Axes`: The axes for constructing a `ComponentArray` from the sampled parameters.
 - `log_likelihood`: A function that computes the log-likelihood of the observed data given the model predictions.
 - `log_prior=zero`: A function that computes the log-prior of the parameters. Default is `zero` (no prior).

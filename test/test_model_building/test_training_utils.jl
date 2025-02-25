@@ -1,8 +1,10 @@
 using Test
 using OrderedCollections
 using ComponentArrays
+using Distributions
 
-using MirrorVI: polynomial_decay, cyclical_polynomial_decay, compute_logpdf_prior, get_parameters_axes, elbo, hybrid_training_loop, rand_z_dropout
+using MirrorVI
+using MirrorVI: polynomial_decay, cyclical_polynomial_decay, compute_logpdf_prior, get_parameters_axes, elbo, hybrid_training_loop, rand_z_dropout, Bijectors
 
 
 # Test polynomial_decay
@@ -59,7 +61,7 @@ end
     params_dict = OrderedDict(
         "priors" => OrderedDict(
             "prior1" => Dict("dim_theta" => (1,)),
-            "prior2" => Dict("dim_theta" => (1,))
+            "prior2" => Dict("dim_theta" => (2,))
         )
     )
 
@@ -100,10 +102,10 @@ end
         x -> Bijectors.transformed(Normal(x[1], 1.0), identity)
     ]
     random_weights = [true, false]
-    model = (theta, X) -> theta[1] .* X[:, 1] .+ theta[2] .* X[:, 2]
+    model = (theta; X) -> (theta[1] .* X[:, 1] .+ theta[2] .* X[:, 2], )
 
-    proto_array = ComponentArray(; (:prior1=>1.0, :prior2=>[1.0])...)
-    theta_axes = getaxes(params_dict)
+    proto_array = ComponentArray(; (:prior1=>1.0, :prior2=>1.0)...)
+    theta_axes = getaxes(proto_array)
     log_likelihood = (y, pred) -> sum(logpdf.(Normal.(pred, 1.0), y))
     log_prior = theta -> 0.0
 
@@ -129,18 +131,21 @@ end
     y = [0.0, 1.0]
     X = [1.0 2.0; 3.0 4.0]
     params_dict = OrderedDict(
-        "vi_family_array" => [x -> Normal(x[1], 1.0)],
+        "vi_family_array" => [
+            x -> Bijectors.transformed(Normal(x[1], 1.0), identity),
+            x -> Bijectors.transformed(Normal(x[1], 1.0), identity)
+        ],
         "ranges_z" => [1:1, 2:2],
         "random_weights" => [true, false],
-        "noisy_gradients" => 0.1,
+        "noisy_gradients" => [0, 0],
         "priors" => OrderedDict(
             "prior1" => Dict("dim_theta" => (1,)),
             "prior2" => Dict("dim_theta" => (1,))
     ))
-    model = (theta, X) -> theta[1] .* X[:, 1] .+ theta[2] .* X[:, 2]
+    model = (theta; X) -> (theta[1] .* X[:, 1] .+ theta[2] .* X[:, 2], )
     log_likelihood = (y, pred) -> sum(logpdf.(Normal.(pred, 1.0), y))
     log_prior = theta -> 0.0
-    optimiser = Optimisers.ADAM()
+    optimiser = MirrorVI.Optimisers.Adam()
 
     # Test hybrid_training_loop
     result = hybrid_training_loop(
@@ -152,7 +157,8 @@ end
         log_likelihood=log_likelihood,
         log_prior=log_prior,
         n_iter=10,
-        optimiser=optimiser
+        optimiser=optimiser,
+        use_noisy_grads=false
     )
     @test haskey(result, "loss_dict")
     @test haskey(result, "best_iter_dict")

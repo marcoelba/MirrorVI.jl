@@ -81,9 +81,8 @@ function log_bernoulli_from_logit(x::Real, logitp::Real)
     x == 0 ? -log1pexp(logitp) : (x == 1 ? -log1pexp(-logitp) : oftype(float(logitp), -Inf))
 end
 
-"""
-    Bernoulli likelihood
-"""
+
+# Bernoulli likelihood
 eps_prob = 1e-6
 
 function log_bernoulli(x::AbstractArray, prob::AbstractArray)

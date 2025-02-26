@@ -6,6 +6,8 @@ include(joinpath("model_building", "training_utils.jl"))
 include(joinpath("model_building", "utils.jl"))
 
 include(joinpath("model_building", "my_optimisers.jl"))
+export MyOptimisers
+
 include(joinpath("model_building", "model_prediction_functions.jl"))
 
 include(joinpath("model_building", "mirror_statistic.jl"))

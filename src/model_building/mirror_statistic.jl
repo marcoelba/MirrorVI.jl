@@ -127,9 +127,7 @@ function optimal_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_targe
 end
 
 
-"""
-    Newton method to control the FDR from posterior distribution
-"""
+# Newton method to control the FDR from posterior distribution
 function posterior_fdr_threshold(inclusion_probs, fdr_target=0.1)
     fp_prob = 1. .- inclusion_probs
     c_opt = 0.
@@ -164,14 +162,8 @@ function posterior_ms_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_
 end
 
 
-"""
-false_discovery_rate(;
-    true_coef::BitVector,
-    estimated_coef::BitVector
-    )
+# classification metrics
 
-    Calculate the False Discovery Rate from a given set of coefficients
-"""
 function false_discovery_rate(;
     true_coef::Union{Array{Real}, BitVector},
     estimated_coef::Union{Array{Real}, BitVector}
@@ -193,18 +185,7 @@ function false_discovery_rate(;
     return FDR
 end
 
-"""
-    Calculate the True Positive Rate (aka Sensitivity, Recall, Hit Rate):
-    TP / (TP + FN)
 
-    true_positive_rate(;
-        true_coef::Union{Vector{Float64}, BitVector},
-        estimated_coef::Union{Vector{Float64}, BitVector}
-    )
-    # Arguments
-    - `true_coef::BitVector`: boolean vector of true coefficients, '1' refers to a coef != 0 and '0' otherwise.
-    - `estimated_coef::BitVector`: boolean vector of estimated coefficients, '1' refers to a coef != 0 and '0' otherwise.
-"""
 function true_positive_rate(;
     true_coef::Union{Array{Real}, BitVector},
     estimated_coef::Union{Array{Real}, BitVector}
@@ -219,9 +200,7 @@ function true_positive_rate(;
     return TPR
 end
 
-"""
-Compute collection of metrics
-"""
+
 function wrapper_metrics(true_coef, pred_coef)
     # FDR
     fdr = false_discovery_rate(

@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get install lcov
       - name: Run coverage
         run: |
-          julia -e 'using Pkg; Pkg.test("MirrorVI", coverage=true)'
+          julia --code-coverage=user -e 'using Pkg; Pkg.test("MirrorVI", coverage=true)'
       - name: Generate LCOV file
         run: |
           julia -e 'using Coverage; coverage = process_folder(); LCOV.writefile("coverage.lcov", coverage)'

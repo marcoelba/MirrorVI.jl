@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get install lcov
       - name: Run coverage
         run: |
-          julia --code-coverage=user -e 'using Pkg; Pkg.test(coverage=true)'
+          julia -e 'using Pkg; Pkg.test("MirrorVI", coverage=true)'
       - name: Generate LCOV file
         run: |
           julia -e 'using Coverage; coverage = process_folder(); LCOV.writefile("coverage.lcov", coverage)'
@@ -49,6 +49,9 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./coverage_report
+      - name: Clean old files
+        run: |
+          julia -e 'using Coverage; Coverage.clean_folder("./")'
       # - uses: codecov/codecov-action@v5
       #   with:
       #     file: lcov.info

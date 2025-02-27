@@ -18,6 +18,7 @@ docs/build/
 docs/site/
 
 .vscode/
+*.lcov
 
 results/
 

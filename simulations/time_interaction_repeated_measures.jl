@@ -1,29 +1,13 @@
 # Time interaction model with repeated measurements
+using MirrorVI
+using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors
+
 using CSV
 using DataFrames
-
-using Optimisers
-using Distributions
-using DistributionsAD
-using LogExpFunctions
 using StatsPlots
+using OrderedCollections
 
-abs_project_path = normpath(joinpath(@__FILE__, "..", "..", ".."))
-
-include(joinpath(abs_project_path, "src", "model_building", "my_optimisers.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "utils.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "training_utils.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "plot_utils.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "bijectors_extension.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "variational_distributions.jl"))
-
-include(joinpath(abs_project_path, "src", "model_building", "distributions_logpdf.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "model_prediction_functions.jl"))
-include(joinpath(abs_project_path, "src", "utils", "mixed_models_data_generation.jl"))
-include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
+abs_project_path = normpath(joinpath(@__FILE__, "..", "..", "results"))
 
 
 n_individuals = 100
@@ -146,7 +130,7 @@ update_parameters_dict(
     params_dict;
     name="tau_beta",
     dim_theta=(p, n_time_points),
-    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_half_cauchy(x, sigma=hyperprior_sigma),
+    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_half_cauchy(x, hyperprior_sigma),
     dim_z=p*n_time_points*2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=LogExpFunctions.log1pexp),
     init_z=randn(p*n_time_points*2) .* 0.1
@@ -184,7 +168,7 @@ update_parameters_dict(
     name="sigma_beta_time",
     dim_theta=(1,),
     logpdf_prior=x::Real -> DistributionsLogPdf.log_half_cauchy(
-        x, sigma=Float32(1)
+        x, Float32(1)
     ),
     dim_z=2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_normal(z; bij=LogExpFunctions.log1pexp),
@@ -221,10 +205,7 @@ update_parameters_dict(
     params_dict;
     name="sigma_y",
     dim_theta=(1,),
-    logpdf_prior=x::Real -> Distributions.logpdf(
-        truncated(Normal(0f0, 1f0), 0f0, Inf32),
-        x
-    ),
+    logpdf_prior=x::Real -> DistributionsLogPdf.log_half_normal(x, 1f0),
     dim_z=2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_normal(z; bij=LogExpFunctions.log1pexp),
     init_z=randn(2)*0.05
@@ -400,11 +381,12 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 # ----------------------------------------------------------------------
 # DETAILED ANALYSIS
 
-data_dict = generate_time_interaction_multiple_measurements_data(
+data_dict = MirrorVI.generate_time_interaction_multiple_measurements_data(
     n_individuals=n_individuals,
     n_time_points=n_time_points,
     n_repeated_measures=n_repeated_measures,
     p=p, p1=p1, p0=p0,
+    cov_multiple_measure_sd=0.,
     beta_pool=Float32.([-1., -2., 1, 2]),
     sd_noise_beta_reps=0.1,
     obs_noise_sd=0.5,
@@ -452,27 +434,27 @@ for dist in q_dist_array
     println(VariationalDistributions.entropy(dist))
 end
 
-theta_axes = get_parameters_axes(params_dict)
-theta = ComponentArray(theta, theta_axes)
+theta_axes = MirrorVI.get_parameters_axes(params_dict)
+theta = MirrorVI.ComponentArray(theta, theta_axes)
 
 model(theta, 1; X=data_dict["Xfix"])[1]
 model(theta, 1; X=data_dict["Xfix"])[2]
 
-compute_logpdf_prior(theta; params_dict=params_dict)
+MirrorVI.compute_logpdf_prior(theta; params_dict=params_dict)
 
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
 optimiser = MyOptimisers.DecayedADAGrad()
 # optimiser = Optimisers.RMSProp(0.01)
 
-res = hybrid_training_loop(
+res = MirrorVI.hybrid_training_loop(
     z=z,
     y=data_dict["y"],
     X=data_dict["Xfix"],
     params_dict=params_dict,
     model=model,
     log_likelihood=DistributionsLogPdf.log_normal,
-    log_prior=x::AbstractArray -> compute_logpdf_prior(x; params_dict=params_dict),
+    log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
     n_iter=4000,
     optimiser=optimiser,
     save_all=false,
@@ -511,16 +493,16 @@ scatter!(mean(mu_beta_group_samples', dims=2))
 
 # beta probs
 beta_probs = rand(q[prior_position[:sigma_beta]], 1000)'
-scatter(mean(beta_probs, dims=1)', label=false)
+scatter(MirrorVI.mean(beta_probs, dims=1)', label=false)
 
 # beta tau
 beta_tau = rand(q[prior_position[:tau_beta]], 1000)'
-scatter(mean(beta_tau, dims=1)', label=false)
+scatter(MirrorVI.mean(beta_tau, dims=1)', label=false)
 
 # beta
 beta = rand(q[prior_position[:beta_fixed]], 1000)'
 density(beta, label=false)
-density(beta .* mean(beta_probs, dims=1), label=false)
+density(beta .* MirrorVI.mean(beta_probs, dims=1), label=false)
 
 
 # MC, p, T, M

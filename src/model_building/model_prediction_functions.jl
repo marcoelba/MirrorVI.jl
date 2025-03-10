@@ -70,16 +70,16 @@ function linear_time_random_intercept_model(
     rep_index::Int64;
     X::AbstractArray
     )
-    n_individuals, p = size(X)
+    n_individuals = size(X, 1)
 
     beta_time = theta[:beta_time]
     beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
     n_time_points = size(beta_time, 1)
 
     # baseline
-    mu_baseline = beta_time[1, rep_index] .+ theta[:beta0_random] .+ X * beta_reg[:, 1, rep_index]
+    mu_baseline = beta_time[1, rep_index] .+ theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg[:, 1, rep_index]
     mu_inc = [
-        Float32.(ones(n_individuals)) .* beta_time[tt, rep_index] .+ X * beta_reg[:, tt, rep_index] for tt = 2:n_time_points
+        Float32.(ones(n_individuals)) .* beta_time[tt, rep_index] .+ X[:, :, rep_index] * beta_reg[:, tt, rep_index] for tt = 2:n_time_points
     ]
     
     mu_matrix = reduce(hcat, [mu_baseline, reduce(hcat, mu_inc)])

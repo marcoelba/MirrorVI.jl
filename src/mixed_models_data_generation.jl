@@ -299,6 +299,7 @@ end
 function generate_time_interaction_multiple_measurements_data(;
     n_individuals, n_time_points, n_repeated_measures,
     p, p1, p0,
+    cov_multiple_measure_sd=0.,
     beta_pool=Float32.([-1., -2., 1, 2]),
     sd_noise_beta_reps=0.,
     obs_noise_sd=1.,
@@ -327,7 +328,11 @@ function generate_time_interaction_multiple_measurements_data(;
     Xfix_1 = rand(MultivariateNormal(cov_matrix_1), n_individuals)
     Xfix = transpose(vcat(Xfix_0, Xfix_1))
 
-    data_dict["Xfix"] = dtype.(Xfix)
+    Xarray = zeros(n_individuals, p, n_repeated_measures)
+    for m = 1:n_repeated_measures
+        Xarray[:, :, m] .= Xfix .+ Random.randn(size(Xfix)) .* cov_multiple_measure_sd
+    end
+    data_dict["Xfix"] = dtype.(Xarray)
 
     # beta fixed
     beta_fixed = zeros(p, n_time_points, n_repeated_measures)
@@ -361,10 +366,10 @@ function generate_time_interaction_multiple_measurements_data(;
     array_mu = zeros(n_individuals, n_time_points, n_repeated_measures)
     for rep = 1:n_repeated_measures
     
-        mu_baseline = beta_time[1, rep] .+ beta0_random .+ Xfix * beta_fixed[:, 1, rep]
+        mu_baseline = beta_time[1, rep] .+ beta0_random .+ Xarray[:, :, rep] * beta_fixed[:, 1, rep]
     
         mu_inc = [
-            ones(n_individuals) .* beta_time[tt, rep] .+ Xfix * beta_fixed[:, tt, rep] for tt = 2:n_time_points
+            ones(n_individuals) .* beta_time[tt, rep] .+ Xarray[:, :, rep] * beta_fixed[:, tt, rep] for tt = 2:n_time_points
         ]
         mu_matrix = reduce(hcat, [mu_baseline, reduce(hcat, mu_inc)])
         mu = cumsum(mu_matrix, dims=2)

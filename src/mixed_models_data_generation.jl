@@ -181,6 +181,7 @@ end
 function generate_multiple_measurements_data(;
     n_individuals, n_repeated_measures,
     p, p1, p0,
+    cov_multiple_measure_sd=0.1,
     beta_pool=Float32.([-1., -2., 1, 2]),
     sd_noise_beta_reps=0.,
     obs_noise_sd=1.,
@@ -208,7 +209,11 @@ function generate_multiple_measurements_data(;
     Xfix_1 = rand(MultivariateNormal(cov_matrix_1), n_individuals)
     Xfix = transpose(vcat(Xfix_0, Xfix_1))
 
-    data_dict["Xfix"] = dtype.(Xfix)
+    Xarray = zeros(n_individuals, p, n_repeated_measures)
+    for m = 1:n_repeated_measures
+        Xarray[:, :, m] .= Xfix .+ Random.randn(size(Xfix)) .* cov_multiple_measure_sd
+    end
+    data_dict["Xfix"] = dtype.(Xarray)
 
     # beta fixed
     beta_fixed = zeros(p, n_repeated_measures)
@@ -234,7 +239,7 @@ function generate_multiple_measurements_data(;
     # Predictor
     array_mu = zeros(n_individuals, n_repeated_measures)
     for rep = 1:n_repeated_measures
-        array_mu[:, rep] = beta0_fixed .+ beta0_random .+ Xfix * beta_fixed[:, rep]
+        array_mu[:, rep] = beta0_fixed .+ beta0_random .+ Xarray[:, :, rep] * beta_fixed[:, rep]
     end
     
     y = dtype.(array_mu .+ Random.randn(n_individuals, n_repeated_measures) * obs_noise_sd)

@@ -3,13 +3,13 @@ using Distributions
 using StatsPlots
 using Random
 using LinearAlgebra
-using Turing
 using StatsFuns
 using StatsBase
 
-abs_project_path = normpath(joinpath(@__FILE__, "..", "..", ".."))
+abs_project_path = normpath(joinpath(@__FILE__, ".."))
 include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
-include(joinpath(abs_project_path, "src", "utils", "classification_metrics.jl"))
+
+results_path = joinpath(abs_project_path, "results", "ms_analysis")
 
 label_files = "ms_analysis_partial_identification"
 
@@ -29,7 +29,7 @@ p = p0 + p1
 true_coef = vcat(zeros(p0), ones(p1))
 
 fdr_target = 0.1
-fp = 30
+fp = 0
 fn = 0
 
 Random.seed!(35)

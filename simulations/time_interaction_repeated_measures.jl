@@ -1,8 +1,7 @@
 # Time interaction model with repeated measurements
 using MirrorVI
-using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors
+using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors, ComponentArray
 
-using CSV
 using DataFrames
 using StatsPlots
 using OrderedCollections
@@ -74,52 +73,52 @@ update_parameters_dict(
 )
 
 
-# beta fixed - Regressors
-# HS hierarchical prior
-
 # group prior on the variance of the half-cauchy
 hyperprior_sigma = ones(p, n_time_points)
 
 
-# update_parameters_dict(
-#     params_dict;
-#     name="sigma_beta_group",
-#     dim_theta=(p, n_time_points),
-#     logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_half_cauchy(
-#         x, sigma=hyperprior_sigma
-#     ),
-#     dim_z=p*n_time_points*2,
-#     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=LogExpFunctions.log1pexp),
-#     init_z=randn(p*n_time_points*2)*0.05
-# )
-# update_parameters_dict(
-#     params_dict;
-#     name="mu_beta_group",
-#     dim_theta=(p, n_time_points),
-#     logpdf_prior=(x::AbstractArray, sigma::AbstractArray) -> DistributionsLogPdf.log_normal(
-#         x, sigma=sigma
-#     ),
-#     dim_z=p*n_time_points*2,
-#     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=identity),
-#     init_z=randn(p*n_time_points*2)*0.05,
-#     dependency=["sigma_beta_group"]
-# )
+# beta fixed - Regressors
+# HS hierarchical prior
 
-# # beta given mu
-# update_parameters_dict(
-#     params_dict;
-#     name="beta_fixed",
-#     dim_theta=(p, n_time_points, n_repeated_measures),
-#     logpdf_prior=(x::AbstractArray, mu::AbstractArray) -> DistributionsLogPdf.log_normal(
-#         x,
-#         mu=mu .* ones(p, n_time_points, n_repeated_measures),
-#         sigma=ones(p, n_time_points, n_repeated_measures)
-#     ),
-#     dim_z=p * n_time_points * n_repeated_measures * 2,
-#     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=identity),
-#     init_z=randn(p*n_time_points*n_repeated_measures*2)*0.05,
-#     dependency=["mu_beta_group"]
-# )
+update_parameters_dict(
+    params_dict;
+    name="sigma_beta_group",
+    dim_theta=(p, n_time_points),
+    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_half_cauchy(
+        x, hyperprior_sigma
+    ),
+    dim_z=p*n_time_points*2,
+    vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=LogExpFunctions.log1pexp),
+    init_z=randn(p*n_time_points*2)*0.05
+)
+update_parameters_dict(
+    params_dict;
+    name="mu_beta_group",
+    dim_theta=(p, n_time_points),
+    logpdf_prior=(x::AbstractArray, sigma::AbstractArray) -> DistributionsLogPdf.log_normal(
+        x, sigma=sigma
+    ),
+    dim_z=p*n_time_points*2,
+    vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=identity),
+    init_z=randn(p*n_time_points*2)*0.05,
+    dependency=["sigma_beta_group"]
+)
+
+# beta given mu
+update_parameters_dict(
+    params_dict;
+    name="beta_fixed",
+    dim_theta=(p, n_time_points, n_repeated_measures),
+    logpdf_prior=(x::AbstractArray, mu::AbstractArray) -> DistributionsLogPdf.log_normal(
+        x,
+        mu=mu .* ones(p, n_time_points, n_repeated_measures),
+        sigma=ones(p, n_time_points, n_repeated_measures)
+    ),
+    dim_z=p * n_time_points * n_repeated_measures * 2,
+    vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=identity),
+    init_z=randn(p*n_time_points*n_repeated_measures*2)*0.05,
+    dependency=["mu_beta_group"]
+)
 
 
 """
@@ -411,11 +410,32 @@ end
 display(plt)
 
 
-model(theta_components, rep; X) = Predictors.linear_time_random_intercept_model(
-    theta_components,
-    rep;
-    X
-)
+function model(
+    theta::MirrorVI.ComponentArray,
+    rep_index::Int64;
+    X::AbstractArray
+    )
+    n_individuals = size(X, 1)
+
+    beta_time = theta[:beta_time]
+    # beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
+    beta_reg = theta[:beta_fixed]
+    n_time_points = size(beta_time, 1)
+
+    # baseline
+    mu_baseline = beta_time[1, rep_index] .+ theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg[:, 1, rep_index]
+    mu_inc = [
+        Float32.(ones(n_individuals)) .* beta_time[tt, rep_index] .+ X[:, :, rep_index] * beta_reg[:, tt, rep_index] for tt = 2:n_time_points
+    ]
+    
+    mu_matrix = reduce(hcat, [mu_baseline, reduce(hcat, mu_inc)])
+
+    mu = cumsum(mu_matrix, dims=2)
+
+    sigma = theta[:sigma_y] .* Float32.(ones(n_individuals, n_time_points))
+    
+    return (mu, sigma)
+end
 
 # get ONE VI distribution
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
@@ -442,6 +462,16 @@ model(theta, 1; X=data_dict["Xfix"])[2]
 
 MirrorVI.compute_logpdf_prior(theta; params_dict=params_dict)
 
+
+function loglik(y, rep_index, pred)
+    sum(DistributionsLogPdf.log_normal(
+        y[:, :, rep_index],
+        pred[1],
+        pred[2]
+    ))
+end
+
+
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
 optimiser = MyOptimisers.DecayedADAGrad()
@@ -453,7 +483,7 @@ res = MirrorVI.hybrid_training_loop(
     X=data_dict["Xfix"],
     params_dict=params_dict,
     model=model,
-    log_likelihood=DistributionsLogPdf.log_normal,
+    log_likelihood=loglik,
     log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
     n_iter=4000,
     optimiser=optimiser,
@@ -468,8 +498,8 @@ plot(res["loss_dict"]["loss"][300:end])
 
 # Get VI distribution
 res["best_iter_dict"]["best_iter"]
-res["best_iter_dict"]["best_z"]
-res["best_iter_dict"]["final_z"]
+res["loss_dict"]["loss"][res["best_iter_dict"]["best_iter"]]
+res["loss_dict"]["loss"]
 
 best_z = res["best_iter_dict"]["best_z"]
 
@@ -489,7 +519,7 @@ plt = density(mu_beta_group_samples[:, 2*p+1:3*p], label=false)
 plt = density(mu_beta_group_samples, label=false)
 
 scatter(vcat(data_dict["beta_reg"]...))
-scatter!(mean(mu_beta_group_samples', dims=2))
+scatter!(MirrorVI.mean(mu_beta_group_samples', dims=2))
 
 # beta probs
 beta_probs = rand(q[prior_position[:sigma_beta]], 1000)'
@@ -506,11 +536,17 @@ density(beta .* MirrorVI.mean(beta_probs, dims=1), label=false)
 
 
 # MC, p, T, M
-beta_samples = zeros(1000, size(ComponentArray(theta, theta_axes)[:beta_fixed])...)
-for ii in 1:1000
-    theta_c = ComponentArray(beta[ii, :], theta_axes)
+vector_init = []
+param_init = ones(params_dict["priors"]["beta_fixed"]["dim_theta"])
+push!(vector_init, Symbol("beta_fixed") => param_init)
+proto_array = ComponentArray(; vector_init...)
+beta_axes = MirrorVI.getaxes(proto_array)
 
-    beta_samples[ii, :, :, :] .= theta_c[:sigma_beta] .* theta_c[:beta_fixed]
+beta_samples = zeros(mc_samples, size(ComponentArray(theta, theta_axes)[:beta_fixed])...)
+for ii in 1:mc_samples
+    theta_c = ComponentArray(beta[:, ii], beta_axes)
+    beta_samples[ii, :, :, :] .= theta_c[:beta_fixed]
+    # beta_samples[ii, :, :, :] .= theta_c[:sigma_beta] .* theta_c[:beta_fixed]
 end
 
 plt = density(beta_samples[:, :, 1, 1], label=false)

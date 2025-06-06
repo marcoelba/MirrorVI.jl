@@ -162,6 +162,28 @@ function posterior_ms_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_
 end
 
 
+function relative_inclusion_frequency(matrix_included, fdr_target, mode="full")
+    # relative inclusion frequency
+    selection_dimension = sum(matrix_included, dims=1)
+    if mode == "full"
+        relative_freq = mean(matrix_included ./ selection_dimension, dims=2)[:, 1]
+        sorted_indeces = sortperm(relative_freq, rev=false)
+    elseif mode == "max"
+        relative_freq = mean(matrix_included ./ maximum(selection_dimension), dims=2)[:, 1]
+        sorted_indeces = sortperm(relative_freq, rev=false)
+    end
+
+    cumsum_rel_freq = cumsum(relative_freq[sorted_indeces])
+    max_t = sum(cumsum_rel_freq .<= fdr_target)
+
+    selection = zeros(length(relative_freq))
+    selection[sorted_indeces[max_t:end]] .= 1
+    
+    return selection
+
+end
+
+
 # classification metrics
 
 function false_discovery_rate(;
@@ -187,8 +209,8 @@ end
 
 
 function true_positive_rate(;
-    true_coef::Union{Array{Real}, BitVector},
-    estimated_coef::Union{Array{Real}, BitVector}
+    true_coef,
+    estimated_coef
     )
 
     sum_coef = true_coef + estimated_coef

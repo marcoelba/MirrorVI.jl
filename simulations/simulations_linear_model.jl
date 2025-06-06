@@ -1,13 +1,15 @@
 # Simulations linear model
 using MirrorVI
-using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors
+using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors, mean
 
 using CSV
 using DataFrames
 using StatsPlots
 
-abs_project_path = normpath(joinpath(@__FILE__, "..", "..", "results"))
+abs_project_path = normpath(joinpath(@__FILE__, ".."))
+include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
 
+abs_project_path = normpath(joinpath(@__FILE__, "..", "..", "results"))
 
 
 n_individuals = 300
@@ -57,7 +59,7 @@ update_parameters_dict(
     params_dict;
     name="sigma_beta",
     dim_theta=(p, ),
-    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_beta(x, 0.5, 0.5),
+    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_beta(x, 1, 1),
     dim_z=p*2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=LogExpFunctions.logistic),
     init_z=vcat(randn(p)*0.1, randn(p)*0.1),
@@ -289,6 +291,22 @@ data_dict = MirrorVI.generate_linear_model_data(
     p=p, p1=p1, p0=p0, corr_factor=corr_factor,
     random_seed=random_seed
 )
+y = data_dict["y"]
+X = data_dict["X"]
+y = y .- mean(y)
+
+
+function linear_model(
+    theta::MirrorVI.ComponentArray;
+    X::AbstractArray,
+    )
+    n = size(X, 1)
+
+    mu = theta[:beta0] .+ X * (theta[:beta] .* theta[:sigma_beta])
+    sigma = Float32.(ones(n)) .* theta[:sigma_y]
+
+    return (mu, sigma)
+end
 
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
@@ -296,10 +314,10 @@ optimiser = MirrorVI.MyOptimisers.DecayedADAGrad()
 
 res = MirrorVI.hybrid_training_loop(
     z=z,
-    y=data_dict["y"],
-    X=data_dict["X"],
+    y=y,
+    X=X,
     params_dict=params_dict,
-    model=Predictors.linear_model,
+    model=linear_model,
     log_likelihood=DistributionsLogPdf.log_normal,
     log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
     n_iter=num_iter,
@@ -320,10 +338,13 @@ q = VariationalDistributions.get_variational_dist(
 plot(res["loss_dict"]["loss"])
 beta_samples = rand(q[prior_position[:beta]], 500)
 sigma_beta_samples = rand(q[prior_position[:sigma_beta]], 500)
+tau_samples = rand(q[prior_position[:tau_beta]], 500)
 
 density(beta_samples', label=false)
 density(beta_samples' .* sigma_beta_samples', label=false)
 density(beta_samples' .* mean(sigma_beta_samples, dims=2)[:, 1]', label=false)
+density(tau_samples, label=false)
+scatter(mean(sigma_beta_samples, dims=2)[:, 1])
 
 
 plt = density(beta_samples' .* sigma_beta_samples', label=false)
@@ -336,14 +357,14 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 mc_samples = 2000
 ms_samples = Int(mc_samples / 2)
 
-mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
+mean_sigma = MirrorVI.mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
 beta = rand(q[prior_position[:beta]], mc_samples) .* mean_sigma
 
 ms_coeffs = MirrorStatistic.mirror_statistic(beta[:, 1:ms_samples], beta[:, ms_samples+1:mc_samples])
 opt_t = MirrorStatistic.get_t(ms_coeffs; fdr_target=0.1)
 inclusion_matrix = ms_coeffs .> opt_t
 n_inclusion_per_mc = sum(inclusion_matrix, dims=1)[1, :]
-mean_inclusion_per_coef = mean(inclusion_matrix, dims=2)[:, 1]
+mean_inclusion_per_coef = MirrorVI.mean(inclusion_matrix, dims=2)[:, 1]
 
 c_opt, selection = MirrorStatistic.posterior_fdr_threshold(
     mean_inclusion_per_coef,
@@ -381,6 +402,65 @@ savefig(plt_probs, joinpath(abs_project_path, "results", "ms_analysis", "$(label
 plt = plot(plt_n, plt_probs)
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_n_and_probs.pdf"))
 
+scatter(mean_sigma)
+
+
+# Loop with relative frequencies
+# B-FDR, Monte Carlo approximation
+MirrorVI.Random.seed!(134)
+mc_samples = 1000
+
+fdp = []
+fdp_estimated = []
+fp_estimated = []
+sum_included = []
+matrix_mirror_coeff = zeros(p, mc_samples)
+thresholds = []
+matrix_included = zeros(p, mc_samples)
+
+for mc = 1:mc_samples
+    beta = rand(q[prior_position[:beta]], 2) .* mean_sigma
+    mirror_coeff = MirrorStatistic.mirror_statistic(beta[:, 1], beta[:, 2])
+    matrix_mirror_coeff[:, mc] = mirror_coeff
+
+    opt_t = MirrorStatistic.get_t(mirror_coeff; fdr_target=fdr_target)
+    push!(thresholds, opt_t)
+    push!(sum_included, sum(mirror_coeff .> opt_t))
+    push!(fp_estimated, sum(mirror_coeff .< -opt_t))
+
+    push!(fdp_estimated, sum(mirror_coeff .< -opt_t) / sum(mirror_coeff .> opt_t))
+    matrix_included[:, mc] = mirror_coeff .> opt_t
+
+    push!(fdp,
+        MirrorStatistic.false_discovery_rate(
+            true_coef=data_dict["beta"] .!= 0.,
+            estimated_coef=mirror_coeff .> opt_t
+        )
+    )
+end
+
+mean(fdp)
+histogram(fdp)
+
+histogram(sum_included)
+mean(sum_included)
+
+# relative inclusion frequency
+selection = MirrorStatistic.relative_inclusion_frequency(matrix_included, 0.1, "max")
+MirrorStatistic.wrapper_metrics(
+    data_dict["beta"] .!= 0,
+    selection
+)
+
+
+mean_ms = mean(matrix_mirror_coeff, dims=2)[:, 1]
+scatter(mean_ms)
+opt_t = MirrorStatistic.get_t(mean_ms; fdr_target=fdr_target)
+MirrorStatistic.wrapper_metrics(
+    data_dict["beta"] .!= 0,
+    mean_ms .> opt_t
+)
+sum(mean_ms .> opt_t)
 
 # -------------------------------------------------------
 # Knockoffs 
@@ -393,14 +473,14 @@ for simu = 1:n_simulations
 
     println("Simulation: $(simu)")
 
-    data_dict = generate_linear_model_data(
+    data_dict = MirrorVI.generate_linear_model_data(
         n_individuals=n_individuals,
         p=p, p1=p1, p0=p0, corr_factor=corr_factor,
         random_seed=random_seed + simu
     )
 
-    Xk_0 = rand(MultivariateNormal(data_dict["cov_matrix_0"]), n_individuals)
-    Xk_1 = rand(MultivariateNormal(data_dict["cov_matrix_1"]), n_individuals)
+    Xk_0 = rand(MirrorVI.MultivariateNormal(data_dict["cov_matrix_0"]), n_individuals)
+    Xk_1 = rand(MirrorVI.MultivariateNormal(data_dict["cov_matrix_1"]), n_individuals)
     Xk = transpose(vcat(Xk_0, Xk_1))
 
     X_aug = hcat(data_dict["X"], Xk)

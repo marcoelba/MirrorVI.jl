@@ -42,6 +42,13 @@ function log_half_normal(
     0.5f0 * log(2) - 0.5f0 * log(Float32(pi)) - log(sigma) - 0.5f0 * (x / sigma)^2f0
 end
 
+function log_half_normal(
+    x::AbstractArray,
+    sigma::AbstractArray=(eltype(x), ones(size(x)))
+    )
+    0.5f0 .* log(2) .- 0.5f0 .* log(Float32(pi)) .- log.(sigma) .- 0.5f0 .* (x ./ sigma).^2f0
+end
+
 
 function log_half_cauchy(
     x::AbstractArray,

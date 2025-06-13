@@ -18,7 +18,7 @@ results_path = joinpath(abs_project_path, "results", "ms_analysis")
 # Frequentist FDR is defined as E(FDP)
 # FDP = False Discovery Proportion
 
-n_tests = 1000
+n_tests = 100
 pi0 = 0.8
 n_null = Int(n_tests * pi0)
 n_true = n_tests - n_null
@@ -219,18 +219,15 @@ prod_prior(0.5, 1)
 density(rand(prod_prior(0.5, 1), 500))
 density!(rand(normal_prior(0., 1.), 500))
 
-# Product prior
 # Posterior - assume the posterior distributions are Gaussian
-posterior_mu = vcat(ones(n_true - 100), zeros(n_null + 100)) .* beta_true
-posterior_sigma = vcat(ones(n_true) * 0.5, ones(n_null) * 0.5)
+n_fn = 2
+posterior_mu = vcat(ones(n_true - n_fn), zeros(n_null + n_fn)) .* beta_true
+posterior_sigma = vcat(ones(n_true) * 0.3, ones(n_null) * 0.3)
 posterior_dist = Distributions.Normal.(posterior_mu, posterior_sigma)
 
-samples_posterior = hcat(rand.(posterior_dist, 1000)...)
+samples_posterior = hcat(rand.(posterior_dist, 300)...)
 density(samples_posterior, label=false)
 
-
-MirrorStatistic.mean_folded_normal.(posterior_mu, posterior_sigma)
-MirrorStatistic.var_folded_normal.(posterior_mu, posterior_sigma)
 
 mean_vec = MirrorStatistic.mean_folded_normal.(posterior_mu, posterior_sigma) .- 
     MirrorStatistic.mean_folded_normal.(0., posterior_sigma)
@@ -243,7 +240,6 @@ ms_dist_vec = [
 
 mirror_coeff = rand.(ms_dist_vec)
 scatter(mirror_coeff)
-density(mirror_coeff)
 
 opt_t = MirrorStatistic.get_t(mirror_coeff; fdr_target=fdr_level)
 sum(mirror_coeff .> opt_t)
@@ -256,10 +252,69 @@ MirrorStatistic.false_discovery_rate(
     estimated_coef=mirror_coeff .> opt_t
 )
 
+M = 150
+mirror_coeff = hcat(rand.(ms_dist_vec, M)...)'
+scatter(mirror_coeff, label=false)
+
+opt_t = MirrorStatistic.get_t(mirror_coeff; fdr_target=fdr_level)
+sum(mirror_coeff .> opt_t) / M
+sum(mirror_coeff .< -opt_t) / M
+
+sum(mirror_coeff .< -opt_t) / sum(mirror_coeff .> opt_t)
+
+t, selection = MirrorStatistic.posterior_fdr_threshold(vec(mean(mirror_coeff .> opt_t, dims=2)), fdr_level)
+MirrorStatistic.wrapper_metrics(
+    beta_true .!= 0,
+    selection
+)
+
+
+# ------------------- LOG -------------------
+optimal_t = 0
+t = 0
+fdr_target = 0.1
+
+for t in range(0., maximum(mirror_coeff), length=1000)
+    n_left_tail = sum(mirror_coeff .< -t)
+    n_right_tail = sum(mirror_coeff .> t)
+    n_right_tail = ifelse(n_right_tail .> 0, n_right_tail, 1)
+
+    fdp = log(n_left_tail) - log(n_right_tail)
+
+    if fdp <= log(fdr_target)
+        optimal_t = t
+        break
+    end
+end
+
+sum(mirror_coeff .< -optimal_t) / sum(mirror_coeff .> optimal_t)
+
+L = vec(sum(mirror_coeff .< -optimal_t, dims=2))
+R = vec(sum(mirror_coeff .> optimal_t, dims=2))
+log_ratio = log.(L .+ 1) .- log.(R .+ 1)
+
+log_ratio = log.(L .+ 1) .- log.(R)
+selection = log_ratio .<= log((fdr_level*n_tests + 1) / n_tests)
+
+ratio = L ./ R
+selection = ratio .<= fdr_level
+
+log_ratio = log.(L) .- log.(R)
+log_ratio[log_ratio .== -Inf] .= -10.
+histogram(log_ratio)
+
+selection = log_ratio .<= log(fdr_level)
+sum(selection)
+
+MirrorStatistic.wrapper_metrics(
+    beta_true .!= 0,
+    selection
+)
+
 
 # B-FDR, Monte Carlo approximation
 Random.seed!(134)
-mc_samples = 1000
+mc_samples = 500
 
 fdp = []
 fdp_estimated = []
@@ -308,15 +363,14 @@ histogram(sum_included)
 histogram(thresholds)
 
 mean(sum_included)
-mode(sum_included)
 median(sum_included)
 
 scatter(matrix_mirror_coeff[:, 1])
 
+
 inclusion_probs = mean(matrix_included, dims=2)[:, 1]
 sorted_indeces = sortperm(inclusion_probs, rev=true)
 sorted_indeces_rev = sortperm(inclusion_probs, rev=false)
-
 scatter(inclusion_probs[sorted_indeces])
 
 t, selection = MirrorStatistic.posterior_fdr_threshold(inclusion_probs, 0.1)
@@ -325,54 +379,32 @@ MirrorStatistic.wrapper_metrics(
     selection
 )
 
-function normalize(x)
-    min_val = minimum(x)
-    max_val = maximum(x)
-    return (x .- min_val) ./ (max_val - min_val)
-end
-inclusion_probs = normalize(inclusion_probs)
+# One global threshold
+fdr_level = 0.1
+optimal_t = MirrorStatistic.get_t(matrix_mirror_coeff; fdr_target=fdr_level)
 
-t, selection = MirrorStatistic.posterior_fdr_threshold(inclusion_probs, 0.1)
+L = vec(sum(matrix_mirror_coeff .< -optimal_t, dims=2))
+R = vec(sum(matrix_mirror_coeff .> optimal_t, dims=2))
+log_ratio = log.(L .+ 1) .- log.(R .+ 1)
+
+log_ratio = log.(L .+ 1) .- log.(R)
+selection = log_ratio .<= log((fdr_level*n_tests + 1) / n_tests)
+
+ratio = L ./ R
+selection = ratio .<= fdr_level
+
+log_ratio = log.(L) .- log.(R)
+log_ratio[log_ratio .== -Inf] .= -10.
+histogram(log_ratio)
+
+selection = log_ratio .<= log(fdr_level)
+sum(selection)
+
 MirrorStatistic.wrapper_metrics(
     beta_true .!= 0,
     selection
 )
 
-
-mean_ms = mean(matrix_mirror_coeff, dims=2)[:, 1]
-scatter(mean_ms)
-opt_t = MirrorStatistic.get_t(mean_ms; fdr_target=fdr_level)
-MirrorStatistic.wrapper_metrics(
-    beta_true .!= 0,
-    mean_ms .> opt_t
-)
-sum(mean_ms .> opt_t)
-
-
-# --------- tail probabilities ----------
-# Step 1: Estimate marginal tail probabilities
-t = median(thresholds)
-
-p_plus = mean(matrix_included, dims=2)
-p_minus = mean(matrix_below_t, dims=2)
-# Convert to vectors
-p_plus = vec(p_plus)
-p_minus = vec(p_minus)
-
-
-t_opt = 0
-for t_m in range(0.99, 0.01, length=100)
-    if (sum(p_minus .< t_m) ./ sum(p_minus .> t_m)) <= alpha
-        t_opt = t_m
-        break
-    end    
-end
-sum(p_minus .< t_opt)
-
-MirrorStatistic.wrapper_metrics(
-    beta_true .!= 0,
-    p_minus .< t_opt
-)
 
 
 # ------- relative inclusion frequency -------
@@ -405,11 +437,24 @@ MirrorStatistic.wrapper_metrics(
     selection
 )
 
-selection = MirrorStatistic.relative_inclusion_frequency(matrix_included, 0.1, mode="max")
+selection = MirrorStatistic.relative_inclusion_frequency(matrix_included, 0.1, "max")
 MirrorStatistic.wrapper_metrics(
     beta_true .!= 0,
     selection
 )
+
+
+# difference in inclusion probabilities
+inclusion_probs = mean(matrix_included, dims=2)[:, 1]
+selection_dimension = sum(matrix_included, dims=1)
+relative_freq = mean(matrix_included ./ selection_dimension, dims=2)[:, 1]
+max_relative_freq = mean(matrix_included ./ maximum(selection_dimension), dims=2)[:, 1]
+mean_relative_freq = mean(matrix_included ./ mean(selection_dimension), dims=2)[:, 1]
+
+scatter(inclusion_probs, label="probs")
+scatter(relative_freq, label="rel")
+scatter!(max_relative_freq, label="max")
+scatter!(mean_relative_freq, label="mean")
 
 
 # Real FDR - expectation over repeated sampling
@@ -460,3 +505,10 @@ histogram(fdr_no_correction)
 
 
 
+# Fixed inclusion matrix
+p = 10
+p1 = 3
+M = 5
+
+matrix_inclusion = zeros(M, p)
+matrix_inclusion[1, :] = 

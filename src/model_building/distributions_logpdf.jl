@@ -89,6 +89,15 @@ function log_bernoulli_from_logit(x::Real, logitp::Real)
 end
 
 
+function log_factorial_approx(n)
+    n * log(n) - n + log(n * (1 + 4*n * (1 + 2*n) ) ) / 6 + log(pi)/2    
+end
+
+function log_poisson(x::AbstractArray, positive_pred::AbstractArray)
+    @. ifelse(x == 0, 0.0, x .* log.(positive_pred) .- positive_pred .- log_factorial_approx.(x))
+end
+
+
 # Bernoulli likelihood
 eps_prob = 1e-6
 

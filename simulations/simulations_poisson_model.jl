@@ -18,7 +18,7 @@ p1 = Int(p * prop_non_zero)
 p0 = p - p1
 corr_factor = 0.5
 
-num_iter = 1000
+num_iter = 4000
 MC_SAMPLES = 10000
 fdr_target = 0.1
 n_simulations = 30
@@ -26,7 +26,7 @@ random_seed = 125
 simulations_models = Dict()
 simulations_metrics = Dict()
 
-label_files = "algo_logistic_n$(n_individuals)_p$(p)_active$(p1)_r$(Int(corr_factor*100))"
+label_files = "algo_poisson_n$(n_individuals)_p$(p)_active$(p1)_r$(Int(corr_factor*100))"
 
 # Define priors and Variational Distributions
 params_dict = MirrorVI.OrderedDict()
@@ -79,7 +79,7 @@ prior_position = params_dict["tuple_prior_position"]
 function model(theta::MirrorVI.ComponentArray; X::AbstractArray)
     beta_reg = theta[:beta] .* theta[:sigma_beta]
     mu = X * beta_reg .+ theta[:beta0]
-    return (mu, )
+    return (MirrorVI.log1pexp(mu), )
 end
 
 
@@ -87,16 +87,15 @@ for simu = 1:n_simulations
 
     println("Simulation: $(simu)")
 
-    data_dict = MirrorVI.generate_logistic_model_data(;
-        n_individuals, class_threshold=0.5,
-        p, p1, p0, beta_pool=[-2, -1, 1, 2], obs_noise_sd=0.5, corr_factor=0.5,
+    data_dict = MirrorVI.generate_poisson_model_data(;
+        n_individuals=n_individuals, p1, p0,
+        beta_pool=[-1., 1], corr_factor=0.5,
         random_seed=random_seed + simu, dtype=Float64
     )
     
     # Training
     z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
-    # optimiser = MyOptimisers.DecayedADAGrad()
-    optimiser = MirrorVI.Optimisers.RMSProp(0.01)
+    optimiser = MyOptimisers.DecayedADAGrad(0.01, 1.0, 0.9)
     
     res = MirrorVI.hybrid_training_loop(
         z=z,
@@ -104,7 +103,7 @@ for simu = 1:n_simulations
         X=data_dict["X"],
         params_dict=params_dict,
         model=model,
-        log_likelihood=DistributionsLogPdf.log_bernoulli_from_logit,
+        log_likelihood=DistributionsLogPdf.log_poisson,
         log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
         n_iter=num_iter,
         optimiser=optimiser,
@@ -178,7 +177,6 @@ for simu = 1:n_simulations
 
     metrics_dict["metrics_R"] = metrics_R
 
-
     simulations_metrics[simu] = metrics_dict
 
 end
@@ -236,42 +234,34 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 
 # --------------------------------------------------------------------
 # Single Run of Bayesian Model
-n = n_individuals * 2
-data_dict = MirrorVI.generate_logistic_model_data(;
-    n_individuals=n, class_threshold=0.5f0,
-    p, p1, p0, beta_pool=Float32.([-2., 2]), obs_noise_sd=0.5, corr_factor=0.5,
-    random_seed=124, dtype=Float32
+data_dict = MirrorVI.generate_poisson_model_data(;
+    n_individuals=n_individuals, p1, p0,
+    beta_pool=[-1., 1], corr_factor=0.5,
+    random_seed=124, dtype=Float64
 )
 
-n_train = Int(n / 2)
-n_test = n - n_train
-train_ids = MirrorVI.sample(1:n, n_train, replace=false)
-test_ids = setdiff(1:n, train_ids)
-
-X_train = data_dict["X"][train_ids, :]
-X_test = data_dict["X"][test_ids, :]
-y_train = data_dict["y"][train_ids]
-y_test = data_dict["y"][test_ids]
+histogram(data_dict["y"])
 
 
 function model(theta::MirrorVI.ComponentArray; X::AbstractArray)
     beta_reg = theta[:beta] .* theta[:sigma_beta]
     mu = X * beta_reg .+ theta[:beta0]
-    return (mu, )
+    return (MirrorVI.log1pexp(mu), )
 end
 
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
-optimiser = MyOptimisers.DecayedADAGrad()
-optimiser = MirrorVI.Optimisers.RMSProp(0.01)
+optimiser = MyOptimisers.DecayedADAGrad(0.01, 1.0, 0.9)
+optimiser = MirrorVI.Optimisers.Adam()
+num_iter = 4000
 
 res = MirrorVI.hybrid_training_loop(
     z=z,
-    y=y_train,
-    X=X_train,
+    y=data_dict["y"],
+    X=data_dict["X"],
     params_dict=params_dict,
     model=model,
-    log_likelihood=DistributionsLogPdf.log_bernoulli_from_logit,
+    log_likelihood=DistributionsLogPdf.log_poisson,
     log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
     n_iter=num_iter,
     optimiser=optimiser,
@@ -305,37 +295,6 @@ ylabel!("Density")
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_posterior_beta.pdf"))
 
 
-ms_dist = MirrorStatistic.posterior_ms_coefficients(
-    q[prior_position[:beta]].dist
-)
-
-metrics = MirrorStatistic.optimal_inclusion(
-    ms_dist_vec=ms_dist,
-    mc_samples=MC_SAMPLES,
-    beta_true=data_dict["beta"],
-    fdr_target=fdr_target
-)
-
-# distribution
-plt_n = histogram(metrics.n_inclusion_per_mc, bins=10, label=false, normalize=true)
-xlabel!("# variables included", labelfontsize=15)
-vline!([mean(metrics.n_inclusion_per_mc)], color = :red, linewidth=5, label="average")
-display(plt_n)
-savefig(plt_n, joinpath(abs_project_path, "results", "ms_analysis", "$(label_files)_n_vars_included.pdf"))
-
-n_inclusion_per_coef = sum(metrics.inclusion_matrix, dims=2)[:,1]
-mean_inclusion_per_coef = mean(metrics.inclusion_matrix, dims=2)[:,1]
-
-c_opt, selection = MirrorStatistic.posterior_fdr_threshold(
-    mean_inclusion_per_coef,
-    fdr_target
-)
-
-metrics = MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0.,
-    selection
-)
-
 plt_probs = scatter(
     findall((1 .- mean_inclusion_per_coef) .> c_opt),
     mean_inclusion_per_coef[findall((1 .- mean_inclusion_per_coef) .> c_opt)],
@@ -362,7 +321,6 @@ ms_samples = Int(mc_samples / 2)
 mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
 scatter(mean_sigma)
 beta = rand(q[prior_position[:beta]], mc_samples) .* mean_sigma
-density(beta')
 
 ms_coeffs = MirrorStatistic.mirror_statistic(beta[:, 1:ms_samples], beta[:, ms_samples+1:mc_samples])
 opt_t = MirrorStatistic.get_t(ms_coeffs; fdr_target=0.1)
@@ -383,6 +341,12 @@ sum(selection)
 R = vec(sum(ms_coeffs .> opt_t, dims=2))
 L = vec(sum(ms_coeffs .< -opt_t, dims=2))
 scatter(L ./ R)
+selection = L ./ R .< fdr_target
+
+metrics_ratio = MirrorStatistic.wrapper_metrics(
+    data_dict["beta"] .!= 0.,
+    selection
+)
 
 selection = R / ms_samples .>= fdr_target
 metrics_R = MirrorStatistic.wrapper_metrics(
@@ -392,19 +356,18 @@ metrics_R = MirrorStatistic.wrapper_metrics(
 scatter(R / ms_samples)
 hline!([0.1])
 
-density(beta[selection, 1:5000]', label=false)
-sum(abs.(mean(beta[selection, 1:5000], dims=2)) .> opt_t)
+selection = abs.(mean(beta, dims=2)) .> opt_t
+metrics_mean_beta = MirrorStatistic.wrapper_metrics(
+    data_dict["beta"] .!= 0.,
+    selection
+)
 
+selection = mean(ms_coeffs, dims=2) .> opt_t
+metrics_mean_ms = MirrorStatistic.wrapper_metrics(
+    data_dict["beta"] .!= 0.,
+    selection
+)
 
-#### GLMNet #####
-using GLMNet
-
-y_string = string.(y_train)
-
-glm = GLMNet.glmnetcv(X_train, y_string)
-coefs = GLMNet.coef(glm)
-sum(coefs .!= 0)
-scatter(coefs)
 
 
 # -------------------------------------------------------
@@ -419,10 +382,10 @@ for simu = 1:n_simulations
 
     println("Simulation: $(simu)")
 
-    data_dict = MirrorVI.generate_logistic_model_data(;
-        n_individuals, class_threshold=0.5f0,
-        p, p1, p0, beta_pool=Float32.([-2., -1, 1, 2]), obs_noise_sd=0.5, corr_factor=0.5,
-        random_seed=random_seed + simu, dtype=Float32
+    data_dict = MirrorVI.generate_poisson_model_data(;
+        n_individuals=n_individuals, p1, p0,
+        beta_pool=[-1., 1], corr_factor=0.5,
+        random_seed=random_seed + simu, dtype=Float64
     )
 
     Xk_0 = rand(MirrorVI.MultivariateNormal(data_dict["cov_matrix_0"]), n_individuals)
@@ -431,7 +394,7 @@ for simu = 1:n_simulations
 
     X_aug = hcat(data_dict["X"], Xk)
 
-    glm_k = GLMNet.glmnetcv(X_aug, string.(data_dict["y"]))
+    glm_k = GLMNet.glmnetcv(X_aug, data_dict["y"], GLMNet.Poisson())
     coefs = GLMNet.coef(glm_k)
 
     beta_1 = coefs[1:p]

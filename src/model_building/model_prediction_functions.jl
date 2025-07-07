@@ -36,10 +36,9 @@ function random_intercept_model(
     )
     n = size(X, 1)
 
-    # beta_reg = theta[:tau_beta] .* theta[:beta_fixed]
-    beta_reg = theta[:beta_fixed]
+    beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
 
-    mu = theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg
+    mu = theta[:beta0_fixed] .+ theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg
     sigma = ones(eltype(X), n) .* theta[:sigma_y]
 
     return (mu, sigma)

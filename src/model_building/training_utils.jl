@@ -238,7 +238,7 @@ function elbo(
         else
             for measurement = 1:n_repeated_measures
                 pred = model(theta_components, measurement; X=X)
-                loglik += log_likelihood(y, measurement, pred)
+                loglik += log_likelihood(y, measurement, pred...)
             end
         end
         logprior = sum(log_prior(theta_components))

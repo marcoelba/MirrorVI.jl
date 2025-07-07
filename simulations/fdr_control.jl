@@ -220,9 +220,20 @@ density(rand(prod_prior(0.5, 1), 500))
 density!(rand(normal_prior(0., 1.), 500))
 
 # Posterior - assume the posterior distributions are Gaussian
-n_fn = 2
-posterior_mu = vcat(ones(n_true - n_fn), zeros(n_null + n_fn)) .* beta_true
-posterior_sigma = vcat(ones(n_true) * 0.3, ones(n_null) * 0.3)
+n_fn = 0
+n_fp = 2
+posterior_mu = vcat(
+    ones(n_true - n_fn),
+    zeros(n_fn),
+    zeros(n_null - n_fp),
+    ones(n_fp) * 0.3
+)
+
+posterior_sigma = vcat(
+    ones(n_true) * 0.3,
+    ones(n_null - n_fp) * 0.3,
+    ones(n_fp) * 0.5
+)
 posterior_dist = Distributions.Normal.(posterior_mu, posterior_sigma)
 
 samples_posterior = hcat(rand.(posterior_dist, 300)...)
@@ -269,52 +280,9 @@ MirrorStatistic.wrapper_metrics(
 )
 
 
-# ------------------- LOG -------------------
-optimal_t = 0
-t = 0
-fdr_target = 0.1
-
-for t in range(0., maximum(mirror_coeff), length=1000)
-    n_left_tail = sum(mirror_coeff .< -t)
-    n_right_tail = sum(mirror_coeff .> t)
-    n_right_tail = ifelse(n_right_tail .> 0, n_right_tail, 1)
-
-    fdp = log(n_left_tail) - log(n_right_tail)
-
-    if fdp <= log(fdr_target)
-        optimal_t = t
-        break
-    end
-end
-
-sum(mirror_coeff .< -optimal_t) / sum(mirror_coeff .> optimal_t)
-
-L = vec(sum(mirror_coeff .< -optimal_t, dims=2))
-R = vec(sum(mirror_coeff .> optimal_t, dims=2))
-log_ratio = log.(L .+ 1) .- log.(R .+ 1)
-
-log_ratio = log.(L .+ 1) .- log.(R)
-selection = log_ratio .<= log((fdr_level*n_tests + 1) / n_tests)
-
-ratio = L ./ R
-selection = ratio .<= fdr_level
-
-log_ratio = log.(L) .- log.(R)
-log_ratio[log_ratio .== -Inf] .= -10.
-histogram(log_ratio)
-
-selection = log_ratio .<= log(fdr_level)
-sum(selection)
-
-MirrorStatistic.wrapper_metrics(
-    beta_true .!= 0,
-    selection
-)
-
-
 # B-FDR, Monte Carlo approximation
 Random.seed!(134)
-mc_samples = 500
+mc_samples = 1000
 
 fdp = []
 fdp_estimated = []
@@ -392,19 +360,23 @@ selection = log_ratio .<= log((fdr_level*n_tests + 1) / n_tests)
 
 ratio = L ./ R
 selection = ratio .<= fdr_level
-
-log_ratio = log.(L) .- log.(R)
-log_ratio[log_ratio .== -Inf] .= -10.
-histogram(log_ratio)
-
-selection = log_ratio .<= log(fdr_level)
-sum(selection)
+scatter(ratio)
+hline!([0.1])
 
 MirrorStatistic.wrapper_metrics(
     beta_true .!= 0,
     selection
 )
 
+
+scatter(R / mc_samples)
+hline!([0.1])
+selection = R / mc_samples .>= fdr_target
+
+MirrorStatistic.wrapper_metrics(
+    beta_true .!= 0,
+    selection
+)
 
 
 # ------- relative inclusion frequency -------
@@ -502,13 +474,3 @@ histogram(fdr_with_correction)
 
 mean(fdr_no_correction)
 histogram(fdr_no_correction)
-
-
-
-# Fixed inclusion matrix
-p = 10
-p1 = 3
-M = 5
-
-matrix_inclusion = zeros(M, p)
-matrix_inclusion[1, :] = 

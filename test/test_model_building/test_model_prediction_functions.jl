@@ -6,7 +6,7 @@ using ComponentArrays
 # Test data
 X = [1.0 2.0; 3.0 4.0]
 theta = ComponentArray(beta0=1.0, beta=[2.0, 3.0], sigma_y=0.1)
-theta_ri = ComponentArray(beta0_random=1.0, beta_fixed=[2.0, 3.0], sigma_y=0.1)
+theta_ri = ComponentArray(beta0_fixed=0.0, beta0_random=1.0, beta_fixed=[2.0, 3.0], sigma_beta=[1.0, 1.0], sigma_y=0.1)
 theta_time = ComponentArray(beta_time=[1.0, 2.0], beta_fixed=[2.0 3.0; 4.0 5.0], sigma_y=0.1)
 theta_time_ri = ComponentArray(
     beta_time=[1.0 2.0; 3.0 4.0],

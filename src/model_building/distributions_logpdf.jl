@@ -42,6 +42,13 @@ function log_half_normal(
     0.5f0 * log(2) - 0.5f0 * log(Float32(pi)) - log(sigma) - 0.5f0 * (x / sigma)^2f0
 end
 
+function log_half_normal(
+    x::AbstractArray,
+    sigma::AbstractArray=(eltype(x), ones(size(x)))
+    )
+    0.5f0 .* log(2) .- 0.5f0 .* log(Float32(pi)) .- log.(sigma) .- 0.5f0 .* (x ./ sigma).^2f0
+end
+
 
 function log_half_cauchy(
     x::AbstractArray,
@@ -79,6 +86,15 @@ end
 
 function log_bernoulli_from_logit(x::Real, logitp::Real)
     x == 0 ? -log1pexp(logitp) : (x == 1 ? -log1pexp(-logitp) : oftype(float(logitp), -Inf))
+end
+
+
+function log_factorial_approx(n)
+    n * log(n) - n + log(n * (1 + 4*n * (1 + 2*n) ) ) / 6 + log(pi)/2    
+end
+
+function log_poisson(x::AbstractArray, positive_pred::AbstractArray)
+    @. ifelse(x == 0, 0.0, x .* log.(positive_pred) .- positive_pred .- log_factorial_approx.(x))
 end
 
 

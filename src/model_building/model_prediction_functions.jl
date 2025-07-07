@@ -34,12 +34,11 @@ function random_intercept_model(
     rep_index::Int64;
     X::AbstractArray
     )
-    n, p = size(X)
+    n = size(X, 1)
 
-    # beta_reg = theta[:tau_beta] .* theta[:beta_fixed]
-    beta_reg = theta[:beta_fixed]
+    beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
 
-    mu = theta[:beta0_random] .+ X * beta_reg
+    mu = theta[:beta0_fixed] .+ theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg
     sigma = ones(eltype(X), n) .* theta[:sigma_y]
 
     return (mu, sigma)
@@ -73,7 +72,8 @@ function linear_time_random_intercept_model(
     n_individuals = size(X, 1)
 
     beta_time = theta[:beta_time]
-    beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
+    # beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
+    beta_reg = theta[:beta_fixed]
     n_time_points = size(beta_time, 1)
 
     # baseline

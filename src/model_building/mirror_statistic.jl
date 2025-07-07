@@ -162,11 +162,33 @@ function posterior_ms_inclusion(;ms_dist_vec, mc_samples::Int64, beta_true, fdr_
 end
 
 
+function relative_inclusion_frequency(matrix_included, fdr_target, mode="full")
+    # relative inclusion frequency
+    selection_dimension = sum(matrix_included, dims=1)
+    if mode == "full"
+        relative_freq = mean(matrix_included ./ selection_dimension, dims=2)[:, 1]
+        sorted_indeces = sortperm(relative_freq, rev=false)
+    elseif mode == "max"
+        relative_freq = mean(matrix_included ./ maximum(selection_dimension), dims=2)[:, 1]
+        sorted_indeces = sortperm(relative_freq, rev=false)
+    end
+
+    cumsum_rel_freq = cumsum(relative_freq[sorted_indeces])
+    max_t = sum(cumsum_rel_freq .<= fdr_target)
+
+    selection = zeros(length(relative_freq))
+    selection[sorted_indeces[max_t:end]] .= 1
+    
+    return selection
+
+end
+
+
 # classification metrics
 
 function false_discovery_rate(;
-    true_coef::Union{Array{Real}, BitVector},
-    estimated_coef::Union{Array{Real}, BitVector}
+    true_coef::AbstractArray,
+    estimated_coef::AbstractArray
     )
 
     sum_coef = true_coef + estimated_coef
@@ -187,8 +209,8 @@ end
 
 
 function true_positive_rate(;
-    true_coef::Union{Array{Real}, BitVector},
-    estimated_coef::Union{Array{Real}, BitVector}
+    true_coef,
+    estimated_coef
     )
 
     sum_coef = true_coef + estimated_coef
@@ -217,5 +239,34 @@ function wrapper_metrics(true_coef, pred_coef)
     return (fdr=fdr, tpr=tpr)
 
 end
- 
+
+"""
+    bh_correction(;p_values::Vector{Float64}, fdr_level::Float64)
+    
+    False Discovery Rate adjusted p-values using Benjamini-Hochberg procedure
+"""
+function bh_correction(;p_values::AbstractArray, fdr_level::Real)
+    if fdr_level > 1.
+        throw(error("fdr_level MUST be <= 1"))
+    end
+
+    # store the ranks in the original order
+    pvalues_ranks_original = hcat(p_values, invperm(sortperm(p_values)))
+
+    n_tests = length(p_values)
+    sorted_p_values = hcat(sort(p_values), sortperm(sort(p_values)))
+    adjusted_pvalues = (sorted_p_values[:, 2] ./ n_tests) .* fdr_level
+    sorted_p_values = hcat(sorted_p_values, adjusted_pvalues)
+
+    # find the largest p-value that is lower than its corresponding BH critical value
+    ranks_significant_pvalues = sorted_p_values[sorted_p_values[:, 1] .< sorted_p_values[:, 3], 2]
+    pvalues_ranks_original = hcat(pvalues_ranks_original, zeros(n_tests))
+    rank = 1
+    for rank in range(1, n_tests)
+        pvalues_ranks_original[rank, 3] = ifelse(pvalues_ranks_original[rank, 2] in ranks_significant_pvalues, 1, 0)
+    end
+
+    return pvalues_ranks_original
+end
+
 end

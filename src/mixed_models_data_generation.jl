@@ -180,7 +180,7 @@ end
 
 function generate_poisson_model_data(;
     n_individuals,
-    p1, p0, beta_pool=[-1., -2., 1, 2], corr_factor=0.5,
+    p1, p0, beta_pool=[-1., -2., 1, 2], beta0_fixed=0.0, corr_factor=0.5,
     random_seed=124, dtype=Float64
     )
 
@@ -204,7 +204,7 @@ function generate_poisson_model_data(;
 
     # Fixed Coeffcients
     beta_fixed = dtype.(vcat(zeros(p0), Random.rand(beta_pool, p1)))
-    beta0_fixed = dtype.(0.)
+    beta0_fixed = dtype.(beta0_fixed)
 
     data_dict["beta"] = beta_fixed
     data_dict["beta0"] = beta0_fixed

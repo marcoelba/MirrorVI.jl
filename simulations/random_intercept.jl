@@ -10,7 +10,7 @@ abs_project_path = normpath(joinpath(@__FILE__, ".."))
 include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
 
 
-n_individuals = 200
+n_individuals = 100
 n_repeated_measures = 5
 p = 500
 p1 = Int(p * 0.05)
@@ -281,8 +281,13 @@ end
 all_metrics = hcat(mc_fdr, posterior_fdr, mc_tpr, posterior_tpr)
 df = DataFrame(all_metrics, ["mc_fdr", "posterior_fdr", "mc_tpr", "posterior_tpr"])
 
-mean(posterior_fdr)
+MirrorVI.median(posterior_fdr)
+MirrorVI.median(mc_fdr)
 mean(mc_fdr)
+mean(posterior_fdr)
+
+mean(mc_tpr)
+mean(posterior_tpr)
 
 CSV.write(
     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
@@ -290,11 +295,11 @@ CSV.write(
 )
 
 # Plot FDR-TPR
-plt = violin([1], posterior_fdr, color="lightblue", label="BayesMS", alpha=1, linewidth=0)
-boxplot!([1], posterior_fdr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
+plt = violin([1], mc_fdr, color="lightblue", label="BayesMS", alpha=1, linewidth=0)
+boxplot!([1], mc_fdr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
 
-violin!([2], posterior_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([2], posterior_tpr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
+violin!([2], mc_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
+boxplot!([2], mc_tpr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
 
 xticks!([1, 2], ["FDR", "TPR"], tickfontsize=15)
 yticks!(range(0, 1, step=0.1), tickfontsize=15)

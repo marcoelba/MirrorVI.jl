@@ -12,8 +12,8 @@ include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl
 
 n_individuals = 500
 
-p = 1000
-prop_non_zero = 0.05
+p = 100
+prop_non_zero = 0.1
 p1 = Int(p * prop_non_zero)
 p0 = p - p1
 corr_factor = 0.5
@@ -487,3 +487,23 @@ yticks!(range(0, 1, step=0.1), tickfontsize=15)
 
 
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_fdrtpr_boxplot_R.pdf"))
+
+
+
+# model-X Knockoff
+using Knockoffs
+
+data_dict = MirrorVI.generate_logistic_model_data(;
+    n_individuals,
+    p1, p0, beta_pool=Float32.([-2., -1, 1, 2]), corr_factor=0.5,
+    random_seed=random_seed, dtype=Float64
+)
+
+knockoff_filter = Knockoffs.fit_lasso(
+    Float64.(data_dict["y"]), data_dict["X"],
+    d=Binomial(),
+    method=:maxent, m=1, fdrs=[0.1, 0.3]
+)
+knockoff_filter.selected[1]
+knockoff_filter.selected[2]
+knockoff_filter.betas

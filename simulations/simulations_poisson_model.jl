@@ -36,7 +36,7 @@ update_parameters_dict(
     params_dict;
     name="beta0",
     dim_theta=(1, ),
-    logpdf_prior=x::Real -> DistributionsLogPdf.log_normal(x),
+    logpdf_prior=x::Real -> DistributionsLogPdf.log_normal(x, 0.0, 5.0),
     dim_z=2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_normal(z; bij=identity),
     init_z=[0., 0.1]
@@ -89,7 +89,7 @@ for simu = 1:n_simulations
 
     data_dict = MirrorVI.generate_poisson_model_data(;
         n_individuals=n_individuals, p1, p0,
-        beta_pool=[-1., 1], corr_factor=0.5,
+        beta_pool=[-1., 1], beta0_fixed=5., corr_factor=0.5,
         random_seed=random_seed + simu, dtype=Float64
     )
     
@@ -200,6 +200,7 @@ df = DataFrame(all_metrics, ["mc_fdr", "posterior_fdr", "mc_tpr", "posterior_tpr
 
 mean(posterior_fdr)
 mean(mc_fdr)
+mean(mc_tpr)
 
 CSV.write(
     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
@@ -234,9 +235,10 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 
 # --------------------------------------------------------------------
 # Single Run of Bayesian Model
-data_dict = MirrorVI.generate_poisson_model_data(;
+# MirrorVI.
+data_dict = generate_poisson_model_data(;
     n_individuals=n_individuals, p1, p0,
-    beta_pool=[-1., 1], corr_factor=0.5,
+    beta_pool=[-1., 1], beta0_fixed=5., corr_factor=0.5,
     random_seed=124, dtype=Float64
 )
 
@@ -251,7 +253,7 @@ end
 
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
-optimiser = MyOptimisers.DecayedADAGrad(0.01, 1.0, 0.9)
+optimiser = MyOptimisers.DecayedADAGrad()
 optimiser = MirrorVI.Optimisers.Adam()
 num_iter = 4000
 
@@ -284,9 +286,11 @@ plot(res["loss_dict"]["loss"][500:end])
 # Get VI distribution
 res["best_iter_dict"]["best_iter"]
 
+beta0_samples = rand(q[prior_position[:beta0]], MC_SAMPLES)
 beta_samples = rand(q[prior_position[:beta]], MC_SAMPLES)
 sigma_samples = rand(q[prior_position[:sigma_beta]], MC_SAMPLES)
 
+density(beta0_samples, label=false)
 density(beta_samples', label=false)
 density(beta_samples' .* sigma_samples', label=false)
 
@@ -384,7 +388,7 @@ for simu = 1:n_simulations
 
     data_dict = MirrorVI.generate_poisson_model_data(;
         n_individuals=n_individuals, p1, p0,
-        beta_pool=[-1., 1], corr_factor=0.5,
+        beta_pool=[-1., 1], beta0_fixed=5., corr_factor=0.5,
         random_seed=random_seed + simu, dtype=Float64
     )
 
@@ -450,3 +454,5 @@ yticks!(range(0, 1, step=0.1), tickfontsize=15)
 
 
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_fdrtpr_boxplot_R.pdf"))
+
+

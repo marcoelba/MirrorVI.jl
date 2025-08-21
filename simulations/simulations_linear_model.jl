@@ -6,6 +6,7 @@ using CSV
 using DataFrames
 using StatsPlots
 using GLM
+using GLMNet
 
 abs_project_path = normpath(joinpath(@__FILE__, ".."))
 include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
@@ -14,7 +15,7 @@ include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl
 n_individuals = 300
 
 p = 1000
-prop_non_zero = 0.025
+prop_non_zero = 0.05
 p1 = Int(p * prop_non_zero)
 p0 = p - p1
 corr_factor = 0.5
@@ -48,7 +49,7 @@ update_parameters_dict(
     params_dict;
     name="tau_beta",
     dim_theta=(1, ),
-    logpdf_prior=x::Real -> DistributionsLogPdf.log_half_cauchy(x, sigma=1.),
+    logpdf_prior=x::Real -> DistributionsLogPdf.log_half_cauchy(x, sigma=3.),
     dim_z=2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_normal(z; bij=LogExpFunctions.log1pexp),
     init_z=vcat(0.1, 0.1)
@@ -58,7 +59,7 @@ update_parameters_dict(
     params_dict;
     name="sigma_beta",
     dim_theta=(p, ),
-    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_beta(x, 1, 1),
+    logpdf_prior=x::AbstractArray -> DistributionsLogPdf.log_beta(x, 0.5, 0.5),
     dim_z=p*2,
     vi_family=z::AbstractArray -> VariationalDistributions.vi_mv_normal(z; bij=LogExpFunctions.logistic),
     init_z=vcat(randn(p)*0.1, randn(p)*0.1),
@@ -146,32 +147,12 @@ for simu = 1:n_simulations
     # ------ Mirror Statistic ------
     metrics_dict = Dict()
 
-    # ms_dist = MirrorStatistic.posterior_ms_coefficients(q[prior_position[:beta]].dist)
-
-    # metrics = MirrorStatistic.optimal_inclusion(
-    #     ms_dist_vec=ms_dist,
-    #     mc_samples=MC_SAMPLES,
-    #     beta_true=data_dict["beta"],
-    #     fdr_target=0.1
-    # )
-    # metrics_dict = Dict()
-
-    # # Posterior
-    # inclusion_probs = mean(metrics.inclusion_matrix, dims=2)[:, 1]
-    # c_opt, selection = MirrorStatistic.posterior_fdr_threshold(inclusion_probs, fdr_target)
-
-    # metrics_posterior = MirrorStatistic.wrapper_metrics(
-    #     data_dict["beta"] .!= 0.,
-    #     selection
-    # )
-    
-    # metrics_dict["metrics_posterior"] = metrics_posterior
 
     # Monte Carlo loop
     mc_samples = 5000
     ms_samples = Int(mc_samples / 2)
-    # mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
-    beta = rand(q[prior_position[:beta]], mc_samples)
+    mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
+    beta = rand(q[prior_position[:beta]], mc_samples) .* mean_sigma
 
     ms_coeffs = MirrorStatistic.mirror_statistic(beta[:, 1:ms_samples], beta[:, ms_samples+1:mc_samples])
     opt_t = MirrorStatistic.get_t(ms_coeffs; fdr_target=fdr_target)
@@ -221,24 +202,22 @@ end
 all_metrics = hcat(mc_fdr, posterior_fdr, mc_tpr, posterior_tpr)
 df = DataFrame(all_metrics, ["mc_fdr", "posterior_fdr", "mc_tpr", "posterior_tpr"])
 
-CSV.write(
+# CSV.write(
+#     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
+#     df
+# )
+
+# Load
+df = CSV.read(
     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
-    df
+    DataFrame
 )
+mc_fdr = df[!, "mc_fdr"]
+mc_tpr = df[!, "mc_tpr"]
+posterior_fdr = df[!, "posterior_fdr"]
+posterior_tpr = df[!, "posterior_tpr"]
 
-
-plt = violin([1], posterior_fdr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([1], posterior_fdr, label=false, color="blue", fillalpha=0.1, linewidth=2)
-
-violin!([2], posterior_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([2], posterior_tpr, label=false, color="blue", fillalpha=0.1, linewidth=2)
-
-xticks!([1, 2], ["FDR", "TPR"], tickfontsize=15)
-yticks!(range(0, 1, step=0.1), tickfontsize=15)
-
-savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_fdrtpr_boxplot.pdf"))
-
-# MC
+###
 plt = violin([1], mc_fdr, color="lightblue", label=false, alpha=1, linewidth=0)
 boxplot!([1], mc_fdr, label=false, color="blue", fillalpha=0.1, linewidth=2)
 
@@ -249,22 +228,6 @@ xticks!([1, 2], ["FDR", "TPR"], tickfontsize=15)
 yticks!(range(0, 1, step=0.1), tickfontsize=15)
 
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_fdrtpr_boxplot.pdf"))
-
-# fdr
-plt = violin([1], mc_fdr, color="lightblue", label="MC", alpha=1, linewidth=0)
-violin!([2], posterior_fdr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([1], mc_fdr, label=false, color="blue", fillalpha=0., linewidth=2)
-boxplot!([2], posterior_fdr, label=false, color="blue", fillalpha=0., linewidth=2)
-
-# tpr
-violin!([4], mc_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-violin!([5], posterior_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-
-boxplot!([4], mc_tpr, label=false, color="blue", fillalpha=0., linewidth=2)
-boxplot!([5], posterior_tpr, label=false, color="blue", fillalpha=0., linewidth=2)
-
-xticks!([1, 2, 4, 5], ["FDR", "TPR"], tickfontsize=15)
-yticks!(range(0, 1, step=0.1), tickfontsize=15)
 
 
 # ----------- Data Splitting -----------
@@ -292,12 +255,12 @@ for simu = 1:n_simulations
     non_zero = lasso_coef .!= 0
 
     X2 = X2[:, non_zero]
-    p1 = size(X2)[2]
+    p_1 = size(X2)[2]
     X2 = hcat(X2, ones(size(X2)[1], 1))
-    p1 += 1
+    p_1 += 1
     lm_on_split2 = GLM.lm(X2, y2)
 
-    lm_on_v_coef = GLM.coef(lm_on_split2)[1:(p1 - 1)]
+    lm_on_v_coef = GLM.coef(lm_on_split2)[1:(p_1 - 1)]
     lm_coef = zeros(length(lasso_coef))
     lm_coef[non_zero] = lm_on_v_coef
 
@@ -543,95 +506,6 @@ savefig(plt_probs, joinpath(abs_project_path, "results", "ms_analysis", "$(label
 plt = plot(plt_n, plt_probs)
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_n_and_probs.pdf"))
 
-scatter(mean_sigma)
-
-scatter(ms_coeffs[:, 1:100], label=false)
-hline!([-opt_t, opt_t], linewidth=3)
-
-L = vec(sum(ms_coeffs .< -opt_t, dims=2))
-R = vec(sum(ms_coeffs .> opt_t, dims=2))
-
-scatter(R)
-scatter!(L)
-sum((L ./ R) .< 0.1)
-
-scatter(R)
-scatter(R / ms_samples)
-hline!([0.1])
-selection = R / ms_samples .>= fdr_target
-
-scatter(L)
-scatter(L / ms_samples)
-hline!([0.1])
-
-ratio = L ./ R
-selection = ratio .<= fdr_target
-scatter(ratio)
-hline!([0.1])
-
-MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0.,
-    selection
-)
-
-
-# Loop with relative frequencies
-# B-FDR, Monte Carlo approximation
-MirrorVI.Random.seed!(134)
-mc_samples = 1000
-
-fdp = []
-fdp_estimated = []
-fp_estimated = []
-sum_included = []
-matrix_mirror_coeff = zeros(p, mc_samples)
-thresholds = []
-matrix_included = zeros(p, mc_samples)
-
-for mc = 1:mc_samples
-    beta = rand(q[prior_position[:beta]], 2) .* mean_sigma
-    mirror_coeff = MirrorStatistic.mirror_statistic(beta[:, 1], beta[:, 2])
-    matrix_mirror_coeff[:, mc] = mirror_coeff
-
-    opt_t = MirrorStatistic.get_t(mirror_coeff; fdr_target=fdr_target)
-    push!(thresholds, opt_t)
-    push!(sum_included, sum(mirror_coeff .> opt_t))
-    push!(fp_estimated, sum(mirror_coeff .< -opt_t))
-
-    push!(fdp_estimated, sum(mirror_coeff .< -opt_t) / sum(mirror_coeff .> opt_t))
-    matrix_included[:, mc] = mirror_coeff .> opt_t
-
-    push!(fdp,
-        MirrorStatistic.false_discovery_rate(
-            true_coef=data_dict["beta"] .!= 0.,
-            estimated_coef=mirror_coeff .> opt_t
-        )
-    )
-end
-
-mean(fdp)
-histogram(fdp)
-
-histogram(sum_included)
-mean(sum_included)
-
-# relative inclusion frequency
-selection = MirrorStatistic.relative_inclusion_frequency(matrix_included, 0.1, "max")
-MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0,
-    selection
-)
-
-
-mean_ms = mean(matrix_mirror_coeff, dims=2)[:, 1]
-scatter(mean_ms)
-opt_t = MirrorStatistic.get_t(mean_ms; fdr_target=fdr_target)
-MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0,
-    mean_ms .> opt_t
-)
-sum(mean_ms .> opt_t)
-
 # -------------------------------------------------------
 # Knockoffs 
 using GLMNet
@@ -691,8 +565,8 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 # All plots together
 # ---------- FDR ----------
 # MC
-plt = violin([1], posterior_fdr, color="lightblue", label="BayesMS", alpha=1, linewidth=0)
-boxplot!([1], posterior_fdr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
+plt = violin([1], mc_fdr, color="lightblue", label="BayesMS", alpha=1, linewidth=0)
+boxplot!([1], mc_fdr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
 # Knockoffs
 violin!([2], fdr, color="lightgreen", label="Knockoff", alpha=1, linewidth=0)
 boxplot!([2], fdr, label=false, linecolor="green", color="green", fillalpha=0., linewidth=2)
@@ -702,8 +576,8 @@ boxplot!([3], ds_fdr, label=false, linecolor="grey", color="grey", fillalpha=0.,
 
 # ---------- TPR ----------
 # MC
-violin!([5], posterior_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([5], posterior_tpr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
+violin!([5], mc_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
+boxplot!([5], mc_tpr, label=false, linecolor="blue", color="blue", fillalpha=0., linewidth=2)
 # Knockoffs
 violin!([6], tpr, color="lightgreen", label=false, alpha=1, linewidth=0)
 boxplot!([6], tpr, label=false, linecolor="green", color="green", fillalpha=0., linewidth=2)

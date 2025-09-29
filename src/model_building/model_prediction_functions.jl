@@ -72,8 +72,8 @@ function linear_time_random_intercept_model(
     n_individuals = size(X, 1)
 
     beta_time = theta[:beta_time]
-    # beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
-    beta_reg = theta[:beta_fixed]
+    beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
+    # beta_reg = theta[:beta_fixed]
     n_time_points = size(beta_time, 1)
 
     # baseline

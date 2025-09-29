@@ -1,12 +1,13 @@
 # Time interaction model with repeated measurements
 using MirrorVI
-using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors, ComponentArray
+using MirrorVI: update_parameters_dict, DistributionsLogPdf, VariationalDistributions, LogExpFunctions, Predictors, ComponentArray, mean
 
 using DataFrames
 using StatsPlots
 using OrderedCollections
 
-abs_project_path = normpath(joinpath(@__FILE__, "..", "..", "results"))
+abs_project_path = normpath(joinpath(@__FILE__, ".."))
+include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl"))
 
 
 n_individuals = 100
@@ -212,6 +213,43 @@ update_parameters_dict(
 
 prior_position = params_dict["tuple_prior_position"]
 
+function linear_time_random_intercept_model(
+    theta::ComponentArray,
+    rep_index::Int64;
+    X::AbstractArray
+    )
+    n_individuals = size(X, 1)
+
+    beta_time = theta[:beta_time]
+    beta_reg = theta[:sigma_beta] .* theta[:beta_fixed]
+    # beta_reg = theta[:beta_fixed]
+    n_time_points = size(beta_time, 1)
+
+    # baseline
+    mu_baseline = beta_time[1, rep_index] .+ theta[:beta0_random] .+ X[:, :, rep_index] * beta_reg[:, 1, rep_index]
+    mu_inc = [
+        ones(n_individuals) .* beta_time[tt, rep_index] .+ X[:, :, rep_index] * beta_reg[:, tt, rep_index] for tt = 2:n_time_points
+    ]
+    
+    mu_matrix = reduce(hcat, [mu_baseline, reduce(hcat, mu_inc)])
+
+    mu = cumsum(mu_matrix, dims=2)
+
+    sigma = theta[:sigma_y] .* ones(n_individuals, n_time_points)
+    
+    return (mu, sigma)
+end
+
+
+function log_lik(
+    x::AbstractArray,
+    measurement,
+    m::AbstractArray,
+    s::AbstractArray
+    )
+    sum(-0.5f0 * log.(2*Float32(pi)) .- log.(s) .- 0.5f0 * ((x[:, :, measurement] .- m) ./ s).^2f0)
+end
+
 fdr_target = 0.1
 MC_SAMPLES = 1000
 n_iter = 4000
@@ -225,12 +263,12 @@ for simu = 1:n_simulations
 
     println("Simulation: $(simu)")
 
-    data_dict = generate_time_interaction_multiple_measurements_data(
+    data_dict = MirrorVI.generate_time_interaction_multiple_measurements_data(
         n_individuals=n_individuals,
         n_time_points=n_time_points,
         n_repeated_measures=n_repeated_measures,
         p=p, p1=p1, p0=p0,
-        beta_pool=Float32.([-1., -2., 1, 2]),
+        beta_pool=[-1., -2., 1, 2],
         sd_noise_beta_reps=0.1,
         obs_noise_sd=0.5,
         corr_factor=corr_factor,
@@ -238,27 +276,21 @@ for simu = 1:n_simulations
         random_intercept_sd=5.,
         beta_time=beta_time,
         random_seed=random_seed + simu,
-        dtype=Float32
-    )
-
-    model(theta_components, rep; X) = Predictors.linear_time_random_intercept_model(
-        theta_components,
-        rep;
-        X
+        dtype=Float64
     )
     
     # Training
     z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
     optimiser = MyOptimisers.DecayedADAGrad()
     
-    res = hybrid_training_loop(
+    res = MirrorVI.hybrid_training_loop(
         z=z,
         y=data_dict["y"],
         X=data_dict["Xfix"],
         params_dict=params_dict,
-        model=model,
-        log_likelihood=DistributionsLogPdf.log_normal,
-        log_prior=x::AbstractArray -> compute_logpdf_prior(x; params_dict=params_dict),
+        model=linear_time_random_intercept_model,
+        log_likelihood=log_lik,
+        log_prior=x::AbstractArray -> MirrorVI.compute_logpdf_prior(x; params_dict=params_dict),
         n_iter=n_iter,
         optimiser=optimiser,
         save_all=false,
@@ -279,30 +311,30 @@ for simu = 1:n_simulations
     # Mirror Statistic
     metrics_dict = Dict()
 
-    ms_dist = MirrorStatistic.posterior_ms_coefficients(q[prior_position[:beta_fixed]].dist)
+    # ms_dist = MirrorStatistic.posterior_ms_coefficients(q[prior_position[:beta_fixed]].dist)
     
-    metrics = MirrorStatistic.optimal_inclusion(
-        ms_dist_vec=ms_dist,
-        mc_samples=MC_SAMPLES,
-        beta_true=vcat(data_dict["beta_fixed"]...),
-        fdr_target=fdr_target
-    )
+    # metrics = MirrorStatistic.optimal_inclusion(
+    #     ms_dist_vec=ms_dist,
+    #     mc_samples=MC_SAMPLES,
+    #     beta_true=vcat(data_dict["beta_fixed"]...),
+    #     fdr_target=fdr_target
+    # )
     
-    n_inclusion_per_coef = sum(metrics.inclusion_matrix, dims=2)[:, 1]
-    mean_inclusion_per_coef = mean(metrics.inclusion_matrix, dims=2)[:, 1]    
-    c_opt, selection = MirrorStatistic.posterior_fdr_threshold(
-        mean_inclusion_per_coef,
-        fdr_target
-    )
-    #
-    metrics_posterior = MirrorStatistic.wrapper_metrics(
-        vcat(data_dict["beta_fixed"]...) .!= 0.,
-        selection
-    )
-    metrics_dict["metrics_posterior"] = metrics_posterior
+    # n_inclusion_per_coef = sum(metrics.inclusion_matrix, dims=2)[:, 1]
+    # mean_inclusion_per_coef = mean(metrics.inclusion_matrix, dims=2)[:, 1]    
+    # c_opt, selection = MirrorStatistic.posterior_fdr_threshold(
+    #     mean_inclusion_per_coef,
+    #     fdr_target
+    # )
+    # #
+    # metrics_posterior = MirrorStatistic.wrapper_metrics(
+    #     vcat(data_dict["beta_fixed"]...) .!= 0.,
+    #     selection
+    # )
+    # metrics_dict["metrics_posterior"] = metrics_posterior
     
     # Monte Carlo loop
-    mc_samples = MC_SAMPLES * 2
+    mc_samples = 5000 * 2
     ms_samples = Int(mc_samples / 2)
     mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
     beta = rand(q[prior_position[:beta_fixed]], mc_samples) .* mean_sigma
@@ -328,48 +360,38 @@ for simu = 1:n_simulations
 
 end
 
+
 mc_fdr = []
 mc_tpr = []
-posterior_fdr = []
-posterior_tpr = []
-
 for simu = 1:n_simulations
     push!(mc_fdr, simulations_metrics[simu]["metrics_mc"].fdr)
     push!(mc_tpr, simulations_metrics[simu]["metrics_mc"].tpr)
-
-    push!(posterior_fdr, simulations_metrics[simu]["metrics_posterior"].fdr)
-    push!(posterior_tpr, simulations_metrics[simu]["metrics_posterior"].tpr)
 end
 
-all_metrics = hcat(mc_fdr, posterior_fdr, mc_tpr, posterior_tpr)
-df = DataFrame(all_metrics, ["mc_fdr", "posterior_fdr", "mc_tpr", "posterior_tpr"])
-
-mean(posterior_fdr)
+all_metrics = hcat(mc_fdr, mc_tpr)
+df = DataFrame(all_metrics, ["mc_fdr", "mc_tpr"])
 mean(mc_fdr)
+mean(posterior_fdr)
+mean(mc_tpr)
+mean(posterior_tpr)
 
-CSV.write(
-    joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
-    df
-)
+# CSV.write(
+#     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
+#     df
+# )
+# df = CSV.read(
+#     joinpath(abs_project_path, "results", "simulations", "$(label_files).csv"),
+#     DataFrame
+# )
+# mc_fdr = df[:, "mc_fdr"]
+# mc_tpr = df[:, "mc_tpr"]
 
 # Plot FDR-TPR
-plt = violin([1], posterior_fdr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([1], posterior_fdr, label=false, color="blue", fillalpha=0.1, linewidth=2)
-
-violin!([2], posterior_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([2], posterior_tpr, label=false, color="blue", fillalpha=0.1, linewidth=2)
-
-xticks!([1, 2], ["FDR", "TPR"], tickfontsize=15)
-yticks!(range(0, 1, step=0.1), tickfontsize=15)
-
-savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_fdrtpr_boxplot_formula.pdf"))
-
-
 plt = violin([1], mc_fdr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([1], mc_fdr, label=false, color="blue", fillalpha=0.1, linewidth=2)
+boxplot!([1], mc_fdr, label=false, color="blue", fillalpha=0, linewidth=2)
 
 violin!([2], mc_tpr, color="lightblue", label=false, alpha=1, linewidth=0)
-boxplot!([2], mc_tpr, label=false, color="blue", fillalpha=0.1, linewidth=2)
+boxplot!([2], mc_tpr, label=false, color="blue", fillalpha=0, linewidth=2)
 
 xticks!([1, 2], ["FDR", "TPR"], tickfontsize=15)
 yticks!(range(0, 1, step=0.1), tickfontsize=15)
@@ -396,18 +418,6 @@ data_dict = MirrorVI.generate_time_interaction_multiple_measurements_data(
     random_seed=124,
     dtype=Float32
 )
-
-plt = plot()
-for ii = 1:n_individuals
-    plot!(data_dict["y"][ii, :, 1], label=false)
-end
-display(plt)
-
-plt = plot()
-for ii = 1:n_repeated_measures
-    plot!(data_dict["y"][1, :, ii], label=false)
-end
-display(plt)
 
 
 function model(

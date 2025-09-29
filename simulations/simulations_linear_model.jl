@@ -369,50 +369,6 @@ update_parameters_dict(
 
 prior_position = params_dict["tuple_prior_position"]
 
-function logpdf_mixture(x::Real, tau::Real, p::Real, c::Real)
-    # Compute the log-pdf of the first normal component (variance = 10 * tau)
-    log_pdf1 = -0.5 * (log(2π * c * tau) + (x^2) / (c * tau))
-    
-    # Compute the log-pdf of the second normal component (variance = tau)
-    log_pdf2 = -0.5 * (log(2π * tau) + (x^2) / tau)
-    
-    # Combine them using log-sum-exp for numerical stability
-    log_mixture = log(p * exp(log_pdf1) + (1 - p) * exp(log_pdf2))
-    
-    return log_mixture
-end
-logpdf_mixture(1., 0.1, 0.3, 100.)
-logpdf_mixture(0.5, 0.1, 0.6, 100.)
-
-
-function logpdf_mixture(x::AbstractArray, p::AbstractArray, tau::Real, c::Real)
-    # Compute the log-pdf of the first normal component (variance = 10 * tau)
-    log_pdf1 = -0.5 .* (log(2π * c * tau) .+ (x.^2) ./ (c * tau))
-    
-    # Compute the log-pdf of the second normal component (variance = tau)
-    log_pdf2 = -0.5 .* (log(2π * tau) .+ (x.^2) ./ tau)
-    
-    # Combine them using log-sum-exp for numerical stability
-    log_mixture = log.(p .* exp.(log_pdf1) .+ (1 .- p) .* exp.(log_pdf2))
-    
-    return log_mixture
-end
-logpdf_mixture([1., 0.5], [0.3, 0.6], 0.1, 100.)
-
-
-
-function linear_model(
-    theta::MirrorVI.ComponentArray;
-    X::AbstractArray,
-    )
-    n = size(X, 1)
-
-    mu = theta[:beta0] .+ X * (theta[:beta] .* theta[:sigma_beta])
-    sigma = ones(n) .* theta[:sigma_y]
-
-    return (mu, sigma)
-end
-
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
 optimiser = MirrorVI.MyOptimisers.DecayedADAGrad()
@@ -499,7 +455,7 @@ scatter!(
 )
 xlabel!("Coefficients", labelfontsize=15)
 ylabel!("Inclusion Probability", labelfontsize=15)
-vspan!(plt_probs, [p0+1, p], color = :green, alpha = 0.2, labels = "true active coefficients")
+vline!(plt_probs, [p0+1, p], color = :green, linewidth=1, alpha = 1., labels = "true active coefficients")
 display(plt_probs)
 savefig(plt_probs, joinpath(abs_project_path, "results", "ms_analysis", "$(label_files)_mean_selection_matrix.pdf"))
 

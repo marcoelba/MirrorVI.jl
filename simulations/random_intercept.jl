@@ -143,7 +143,7 @@ function log_lik(
 end
 
 
-for simu = 11:n_simulations
+for simu = 1:n_simulations
 
     println("Simulation: $(simu)")
 

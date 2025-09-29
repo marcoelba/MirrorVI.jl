@@ -12,14 +12,14 @@ include(joinpath(abs_project_path, "src", "model_building", "mirror_statistic.jl
 
 n_individuals = 500
 
-p = 100
-prop_non_zero = 0.1
+p = 1000
+prop_non_zero = 0.05
 p1 = Int(p * prop_non_zero)
 p0 = p - p1
 corr_factor = 0.5
 
 num_iter = 1000
-MC_SAMPLES = 10000
+MC_SAMPLES = 5000
 fdr_target = 0.1
 n_simulations = 30
 random_seed = 125
@@ -88,8 +88,8 @@ for simu = 1:n_simulations
     println("Simulation: $(simu)")
 
     data_dict = MirrorVI.generate_logistic_model_data(;
-        n_individuals, class_threshold=0.5,
-        p, p1, p0, beta_pool=[-2, -1, 1, 2], obs_noise_sd=0.5, corr_factor=0.5,
+        n_individuals,
+        p1, p0, beta_pool=[-2, -1, 1, 2], corr_factor=0.5,
         random_seed=random_seed + simu, dtype=Float64
     )
     
@@ -238,8 +238,8 @@ savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files
 # Single Run of Bayesian Model
 n = n_individuals * 2
 data_dict = MirrorVI.generate_logistic_model_data(;
-    n_individuals=n, class_threshold=0.5f0,
-    p, p1, p0, beta_pool=Float32.([-2., 2]), obs_noise_sd=0.5, corr_factor=0.5,
+    n_individuals=n,
+    p1, p0, beta_pool=Float32.([-2., -1, 1, 2]), corr_factor=0.5,
     random_seed=124, dtype=Float32
 )
 
@@ -253,12 +253,6 @@ X_test = data_dict["X"][test_ids, :]
 y_train = data_dict["y"][train_ids]
 y_test = data_dict["y"][test_ids]
 
-
-function model(theta::MirrorVI.ComponentArray; X::AbstractArray)
-    beta_reg = theta[:beta] .* theta[:sigma_beta]
-    mu = X * beta_reg .+ theta[:beta0]
-    return (mu, )
-end
 
 # Training
 z = VariationalDistributions.get_init_z(params_dict, dtype=Float64)
@@ -321,7 +315,6 @@ plt_n = histogram(metrics.n_inclusion_per_mc, bins=10, label=false, normalize=tr
 xlabel!("# variables included", labelfontsize=15)
 vline!([mean(metrics.n_inclusion_per_mc)], color = :red, linewidth=5, label="average")
 display(plt_n)
-savefig(plt_n, joinpath(abs_project_path, "results", "ms_analysis", "$(label_files)_n_vars_included.pdf"))
 
 n_inclusion_per_coef = sum(metrics.inclusion_matrix, dims=2)[:,1]
 mean_inclusion_per_coef = mean(metrics.inclusion_matrix, dims=2)[:,1]
@@ -348,52 +341,11 @@ scatter!(
 )
 xlabel!("Coefficients", labelfontsize=15)
 ylabel!("Inclusion Probability", labelfontsize=15)
-vspan!(plt_probs, [p0+1, p], color = :green, alpha = 0.2, labels = "true active coefficients")
+vline!(plt_probs, [p0+1, p], color = :green, linewidth=1., alpha = 1., labels = "true active coefficients")
 display(plt_probs)
-savefig(plt_probs, joinpath(abs_project_path, "results", "ms_analysis", "$(label_files)_mean_selection_matrix.pdf"))
 
 plt = plot(plt_n, plt_probs)
 savefig(plt, joinpath(abs_project_path, "results", "simulations", "$(label_files)_n_and_probs.pdf"))
-
-
-# Monte Carlo loop
-mc_samples = 10000
-ms_samples = Int(mc_samples / 2)
-mean_sigma = mean(rand(q[prior_position[:sigma_beta]], mc_samples), dims=2)[:, 1]
-scatter(mean_sigma)
-beta = rand(q[prior_position[:beta]], mc_samples) .* mean_sigma
-density(beta')
-
-ms_coeffs = MirrorStatistic.mirror_statistic(beta[:, 1:ms_samples], beta[:, ms_samples+1:mc_samples])
-opt_t = MirrorStatistic.get_t(ms_coeffs; fdr_target=0.1)
-inclusion_matrix = ms_coeffs .> opt_t
-mean_inclusion_per_coef = mean(inclusion_matrix, dims=2)[:, 1]
-
-c_opt, selection = MirrorStatistic.posterior_fdr_threshold(
-    mean_inclusion_per_coef,
-    fdr_target
-)
-
-metrics_mc = MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0.,
-    selection
-)
-sum(selection)
-
-R = vec(sum(ms_coeffs .> opt_t, dims=2))
-L = vec(sum(ms_coeffs .< -opt_t, dims=2))
-scatter(L ./ R)
-
-selection = R / ms_samples .>= fdr_target
-metrics_R = MirrorStatistic.wrapper_metrics(
-    data_dict["beta"] .!= 0.,
-    selection
-)
-scatter(R / ms_samples)
-hline!([0.1])
-
-density(beta[selection, 1:5000]', label=false)
-sum(abs.(mean(beta[selection, 1:5000], dims=2)) .> opt_t)
 
 
 #### GLMNet #####

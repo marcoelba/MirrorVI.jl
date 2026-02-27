@@ -181,7 +181,7 @@ end
 mean(fdr_with_correction)
 histogram(fdr_with_correction)
 
-histogram(hcat(lm_coef_dist...)[n_tests, :])
+histogram(hcat(lm_coef_dist...)[100, :])
 
 # ----------------------------------------------------
 # Bayesian Gaussian model

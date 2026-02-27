@@ -23,7 +23,6 @@ This function is commonly used in optimization algorithms (e.g., learning rate s
     - `Float32`: The decayed value at step `t`.
     
     # Examples
-    ```julia
     julia> polynomial_decay(10)  # Default parameters
     0.17782794f0
     
@@ -51,7 +50,7 @@ This function creates a learning rate schedule where the polynomial decay is app
 - `Vector{Float32}`: A vector of decayed values representing the learning rate schedule.
 
 # Examples
-```julia
+
 julia> schedule = cyclical_polynomial_decay(10, 2)  # 10 iterations, 2 cycles
 10-element Vector{Float32}:
  0.17782794

@@ -132,7 +132,7 @@ function posterior_fdr_threshold(inclusion_probs, fdr_target=0.1)
     fp_prob = 1. .- inclusion_probs
     c_opt = 0.
 
-    for c in sort(fp_prob, rev=true)
+    for c in sort(fp_prob, rev=true, dims=1)
         lower_than_c = fp_prob .<= c
         if (sum(fp_prob[lower_than_c]) / sum(lower_than_c)) < fdr_target
             c_opt = c
